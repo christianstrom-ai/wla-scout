@@ -1,19 +1,145 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { api } from './api.js';
 
 export default function Feed() {
   const [data, setData] = useState(null);
-  useEffect(() => { api('/feed/today').then(setData); }, []);
+  const [openId, setOpenId] = useState(null);
+  const { id: clipId } = useParams();
+  async function refresh() { setData(await api('/feed/today')); }
+  useEffect(() => { refresh(); }, []);
+  useEffect(() => { if (clipId) setOpenId(clipId); }, [clipId]);
+
   if (!data) return <div className="text-slate-500">Laddar…</div>;
   return (
     <div>
       <div className="flex items-baseline justify-between mb-4">
         <h1 className="text-xl font-bold">Dagens feed · {data.date}</h1>
-        <div className="text-xs text-slate-500">{data.candidates.length} kandidater</div>
+        <div className="text-xs text-slate-500">
+          {data.candidates.length} kandidater · golv {data.quality_floor}
+        </div>
       </div>
-      {data.candidates.length === 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 text-sm">
-          Inga kandidater levererade ännu. Kör scouting-pipelinen.
+      {data.candidates.length === 0 && <Empty />}
+      <div className="space-y-3">
+        {data.candidates.map((c, i) => (
+          <Card key={c.id} c={c} rank={i + 1}
+                open={openId === c.id}
+                onToggle={() => setOpenId(openId === c.id ? null : c.id)}
+                onDecided={refresh} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Empty() {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 text-sm">
+      Inga kandidater levererade ännu. Kör scouting-pipelinen.
+    </div>
+  );
+}
+
+function Card({ c, rank, open, onToggle, onDecided }) {
+  return (
+    <div className={`bg-white border rounded-xl overflow-hidden ${c.decision ? 'border-emerald-200' : 'border-slate-200'}`}>
+      <button onClick={onToggle} className="w-full text-left p-3 flex items-center gap-3 hover:bg-slate-50">
+        <div className="w-32 aspect-video bg-slate-100 rounded overflow-hidden flex-shrink-0">
+          {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+            <span className="font-mono">#{rank}</span>
+            <span>{c.channel_title}</span>
+            <span>·</span>
+            <span>{(c.channel_subscribers ?? 0).toLocaleString('sv-SE')} subs</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.is_short ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+              {c.is_short ? 'Short' : 'Long-form'}
+            </span>
+            {c.source_confidence === 'low' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">misstänkt dublett</span>
+            )}
+          </div>
+          <div className="font-semibold text-sm truncate">{c.title}</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {(c.views ?? 0).toLocaleString('sv-SE')} views · {(c.likes ?? 0).toLocaleString('sv-SE')} likes · {(c.comments ?? 0).toLocaleString('sv-SE')} comments
+          </div>
+        </div>
+        <div className="text-right pr-3">
+          <div className="text-2xl font-bold font-mono">{c.total_score?.toFixed(0) ?? '–'}</div>
+          <div className="text-[10px] uppercase text-slate-400">totalscore</div>
+        </div>
+      </button>
+      {open && <Expanded c={c} onDecided={onDecided} />}
+    </div>
+  );
+}
+
+const SCORE_LABELS = {
+  velocity: 'Velocity',
+  engagement: 'Engagemang',
+  overperformance: 'Överprestation',
+  profile_match: 'Profilmatchning',
+  story: 'Story-/intervjupotential',
+  reachability: 'Nåbarhet',
+  originality: 'Originalkälla',
+};
+
+function Expanded({ c, onDecided }) {
+  async function decide(verdict) {
+    await api(`/candidate/${c.id}/decision`, { method: 'POST', body: JSON.stringify({ verdict }) });
+    onDecided();
+  }
+  return (
+    <div className="border-t border-slate-200 p-4 bg-slate-50/50 space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {Object.entries(SCORE_LABELS).map(([key, label]) => {
+          const s = c.scores?.[key];
+          if (!s) return null;
+          return (
+            <div key={key} className="bg-white border border-slate-200 rounded-lg p-3">
+              <div className="flex items-baseline justify-between mb-1">
+                <div className="text-xs font-semibold text-slate-700">{label}</div>
+                <div className="font-mono text-sm font-bold">{Math.round(s.norm)}</div>
+              </div>
+              <div className="text-xs text-slate-500">{s.explain}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="bg-white border border-slate-200 rounded-lg p-3">
+          <div className="text-xs font-semibold text-slate-700 mb-1">Kontakt</div>
+          {c.contact?.found ? (
+            <div className="text-xs space-y-0.5">
+              {c.contact.email && <div className="font-mono">{c.contact.email}</div>}
+              {c.contact.instagram && <div>@{c.contact.instagram}</div>}
+            </div>
+          ) : (
+            <div className="text-xs text-amber-600">kontakt ej hittad</div>
+          )}
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-3">
+          <div className="text-xs font-semibold text-slate-700 mb-1">Föreslagen vinkel</div>
+          <div className="text-xs">{c.suggested_angle || c.scores?.story?.explain || '—'}</div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <a href={c.url} target="_blank" rel="noopener" className="text-xs text-blue-600 hover:underline">
+          Öppna på YouTube →
+        </a>
+        <div className="flex gap-2">
+          <button onClick={() => decide('snooze')}
+            className="px-3 py-1.5 text-xs rounded-md border border-slate-300 hover:bg-slate-100">Snooze</button>
+          <button onClick={() => decide('no')}
+            className="px-3 py-1.5 text-xs rounded-md bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">Nej</button>
+          <button onClick={() => decide('yes')}
+            className="px-3 py-1.5 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Ja</button>
+        </div>
+      </div>
+      {c.decision && (
+        <div className="text-xs text-slate-500 italic">
+          Beslut: {c.decision.verdict} · {new Date(c.decision.decided_at).toLocaleString('sv-SE')}
         </div>
       )}
     </div>

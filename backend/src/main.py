@@ -11,6 +11,10 @@ from .auth import SESSION_COOKIE, check_password, issue_session_token, require_a
 from .config import settings
 from .db import get_db, engine, Base
 from . import models  # noqa: F401 — registrera tabeller
+from .scheduler import setup_scheduler
+
+# Kill-switch i minne: när False → scout-jobbet skippar LLM-anrop.
+KILL_SWITCH = {"llm_enabled": True, "scheduler_enabled": True}
 
 app = FastAPI(title="WLA Scout API", version="0.1.0")
 
@@ -28,6 +32,8 @@ def _ensure_tables():
     # SQLite quick-start. Prod kör Alembic-migrationer.
     if settings.database_url.startswith("sqlite"):
         Base.metadata.create_all(engine)
+    if KILL_SWITCH["scheduler_enabled"]:
+        setup_scheduler()
 
 
 @app.get("/health")
@@ -79,10 +85,107 @@ def me(user: str = Depends(require_auth)):
     return {"user": user}
 
 
-# Placeholder-endpoints — implementeras i kommande byggsteg
+def _candidate_dto(c: models.Candidate) -> dict:
+    return {
+        "id": c.id, "tracking_id": c.tracking_id,
+        "video_id": c.video_id, "channel_id": c.channel_id,
+        "title": c.title, "description": c.description,
+        "thumbnail_url": c.thumbnail_url,
+        "published_at": c.published_at.isoformat() if c.published_at else None,
+        "duration_sec": c.duration_sec,
+        "is_short": c.is_short,
+        "channel_title": c.channel_title,
+        "channel_subscribers": c.channel_subscribers,
+        "views": c.views, "likes": c.likes, "comments": c.comments,
+        "scores": c.scores or {},
+        "total_score": c.total_score,
+        "source_confidence": c.source_confidence,
+        "source_flags": c.source_flags,
+        "contact": {
+            "email": c.contact_email,
+            "instagram": c.contact_instagram,
+            "other": c.contact_other,
+            "found": c.contact_found,
+        },
+        "suggested_angle": c.suggested_angle,
+        "url": f"https://youtube.com/watch?v={c.video_id}",
+        "decision": _latest_decision(c),
+    }
+
+
+def _latest_decision(c: models.Candidate) -> dict | None:
+    if not c.decisions:
+        return None
+    latest = max(c.decisions, key=lambda d: d.decided_at)
+    return {"verdict": latest.verdict, "decided_at": latest.decided_at.isoformat()}
+
+
 @app.get("/feed/today")
-def feed_today(user: str = Depends(require_auth)):
-    return {"date": datetime.now(timezone.utc).date().isoformat(), "candidates": []}
+def feed_today(user: str = Depends(require_auth), db: Session = Depends(get_db)):
+    today = datetime.now(timezone.utc).date().isoformat()
+    delivery = db.query(models.DailyDelivery).filter_by(date=today).first()
+    if not delivery or not delivery.candidate_ids:
+        return {"date": today, "candidates": []}
+    cands = db.query(models.Candidate).filter(models.Candidate.id.in_(delivery.candidate_ids)).all()
+    ordered = sorted(cands, key=lambda c: delivery.candidate_ids.index(c.id))
+    return {"date": today, "delivery_id": delivery.id, "quality_floor": delivery.quality_floor,
+            "candidates": [_candidate_dto(c) for c in ordered]}
+
+
+@app.get("/candidate/{cand_id}")
+def candidate_detail(cand_id: str, user: str = Depends(require_auth), db: Session = Depends(get_db)):
+    c = db.query(models.Candidate).filter_by(id=cand_id).first()
+    if not c:
+        raise HTTPException(404, "Not found")
+    return _candidate_dto(c)
+
+
+class DecisionPayload(BaseModel):
+    verdict: str  # 'yes' | 'no' | 'snooze'
+    note: str | None = None
+
+
+@app.post("/candidate/{cand_id}/decision")
+def candidate_decision(
+    cand_id: str, payload: DecisionPayload,
+    user: str = Depends(require_auth), db: Session = Depends(get_db),
+):
+    if payload.verdict not in ("yes", "no", "snooze"):
+        raise HTTPException(400, "verdict must be yes/no/snooze")
+    c = db.query(models.Candidate).filter_by(id=cand_id).first()
+    if not c:
+        raise HTTPException(404, "Not found")
+    d = models.Decision(candidate_id=cand_id, verdict=payload.verdict,
+                        decided_by=user, note=payload.note)
+    db.add(d); db.commit()
+    return {"ok": True, "decision_id": d.id}
+
+
+@app.post("/admin/kill-switch")
+def kill_switch(payload: dict, user: str = Depends(require_auth)):
+    if "llm_enabled" in payload:
+        KILL_SWITCH["llm_enabled"] = bool(payload["llm_enabled"])
+    if "scheduler_enabled" in payload:
+        KILL_SWITCH["scheduler_enabled"] = bool(payload["scheduler_enabled"])
+    return {"ok": True, "state": KILL_SWITCH}
+
+
+@app.get("/admin/kill-switch")
+def kill_switch_state(user: str = Depends(require_auth)):
+    return KILL_SWITCH
+
+
+@app.post("/admin/trigger-scout")
+def trigger_scout(user: str = Depends(require_auth)):
+    """Manuell scouting-körning från statuspanelen."""
+    from .services.scout import run_scout
+    from .db import SessionLocal
+    with SessionLocal() as db:
+        try:
+            res = run_scout(db)
+            return {"ok": True, "result": res}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, str(exc))
 
 
 @app.get("/status")
