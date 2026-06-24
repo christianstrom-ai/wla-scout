@@ -234,16 +234,14 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
 
     db.flush()
 
-    # Välj ut feed-kandidater. Garantera ALLTID minst 10 i feeden så
-    # redaktionen kan bedöma fler kandidater (= mer feedback för
-    # vikt-kalibreringen). Markera fortfarande de under quality_floor
-    # så det syns i UI:t att de är "under floor".
+    # Välj ut feed-kandidater. Min 10 (alltid något att bedöma), max 20
+    # över quality_floor (mer feedback på goda dagar utan att drunkna
+    # redaktionen). Markera under-floor i UI:t.
     candidates_sorted = [c for c in sorted(built, key=lambda c: c.total_score or 0, reverse=True)
                          if not (c.scores or {}).get("ai_generated", False)]
     above_floor = [c for c in candidates_sorted if (c.total_score or 0) >= settings.quality_floor]
-    selected = above_floor[:10]
+    selected = above_floor[:20]
     if len(selected) < 10:
-        # Fyll på med de bästa under floor tills vi når 10
         remaining = [c for c in candidates_sorted if c not in selected]
         selected = selected + remaining[: 10 - len(selected)]
 

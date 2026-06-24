@@ -23,7 +23,7 @@ services:
       - key: LLM_TOPN
         value: "300"
       - key: QUALITY_FLOOR
-        value: "55"
+        value: "60"
       - key: WLA_CHANNEL_ID
         value: UCz2RMMEv5CNrOKJhs7BvLpw
       - key: WLA_PUBLISHED_SHEET_ID
