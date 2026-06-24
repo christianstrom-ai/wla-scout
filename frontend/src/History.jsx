@@ -28,7 +28,9 @@ export default function History() {
               <th className="text-left px-4 py-2">Datum</th>
               <th className="text-left px-4 py-2">Veckodag</th>
               <th className="text-right px-4 py-2">Klipp</th>
-              <th className="text-right px-4 py-2">Bedömda</th>
+              <th className="text-right px-4 py-2">Ja</th>
+              <th className="text-right px-4 py-2">Nej</th>
+              <th className="text-right px-4 py-2">Snooze</th>
               <th className="text-right px-4 py-2">Kvar</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -43,7 +45,9 @@ export default function History() {
                   <td className="px-4 py-2 font-mono">{d.date}</td>
                   <td className="px-4 py-2 capitalize text-slate-600">{weekday}</td>
                   <td className="px-4 py-2 text-right font-mono">{d.candidate_count}</td>
-                  <td className="px-4 py-2 text-right font-mono text-emerald-700">{d.decided}</td>
+                  <td className={`px-4 py-2 text-right font-mono ${d.yes > 0 ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>{d.yes}</td>
+                  <td className={`px-4 py-2 text-right font-mono ${d.no > 0 ? 'text-red-700' : 'text-slate-400'}`}>{d.no}</td>
+                  <td className={`px-4 py-2 text-right font-mono ${d.snooze > 0 ? 'text-slate-600' : 'text-slate-400'}`}>{d.snooze}</td>
                   <td className={`px-4 py-2 text-right font-mono ${pending ? 'text-amber-700 font-semibold' : 'text-slate-400'}`}>
                     {d.pending}
                   </td>

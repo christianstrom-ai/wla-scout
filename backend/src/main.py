@@ -174,18 +174,17 @@ def feed_dates(user: str = Depends(require_auth), db: Session = Depends(get_db))
     out = []
     for d in deliveries:
         cands = db.query(models.Candidate).filter(models.Candidate.id.in_(d.candidate_ids or [])).all()
-        decided = 0
-        pending = 0
+        counts = {"yes": 0, "no": 0, "snooze": 0, "pending": 0}
         for c in cands:
-            if c.decisions:
-                decided += 1
-            else:
-                pending += 1
+            if not c.decisions:
+                counts["pending"] += 1
+                continue
+            latest = max(c.decisions, key=lambda x: x.decided_at)
+            counts[latest.verdict] = counts.get(latest.verdict, 0) + 1
         out.append({
             "date": d.date,
             "candidate_count": d.candidate_count,
-            "decided": decided,
-            "pending": pending,
+            **counts,
         })
     return {"dates": out}
 
