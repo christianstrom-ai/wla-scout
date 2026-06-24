@@ -1,8 +1,14 @@
 """FastAPI entrypoint. Health, login, dashboard-API."""
 from __future__ import annotations
-from datetime import datetime, timezone
+import csv
+import io
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,6 +31,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def strip_api_prefix(request, call_next):
+    # Frontend kallar /api/* (Vite dev-proxy gör samma rewrite). I prod
+    # serverar samma container både frontend och API; rewrite här istället.
+    path = request.url.path
+    if path.startswith("/api/"):
+        request.scope["path"] = path[4:] or "/"
+        raw = request.scope.get("raw_path")
+        if raw:
+            request.scope["raw_path"] = raw[4:] or b"/"
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -120,16 +139,55 @@ def _latest_decision(c: models.Candidate) -> dict | None:
     return {"verdict": latest.verdict, "decided_at": latest.decided_at.isoformat()}
 
 
+def _delivery_payload(date: str, delivery: models.DailyDelivery | None, db: Session) -> dict:
+    if not delivery or not delivery.candidate_ids:
+        return {"date": date, "candidates": [], "quality_floor": settings.quality_floor}
+    cands = db.query(models.Candidate).filter(models.Candidate.id.in_(delivery.candidate_ids)).all()
+    ordered = sorted(cands, key=lambda c: delivery.candidate_ids.index(c.id))
+    return {"date": date, "delivery_id": delivery.id, "quality_floor": delivery.quality_floor,
+            "candidates": [_candidate_dto(c) for c in ordered]}
+
+
 @app.get("/feed/today")
 def feed_today(user: str = Depends(require_auth), db: Session = Depends(get_db)):
     today = datetime.now(timezone.utc).date().isoformat()
     delivery = db.query(models.DailyDelivery).filter_by(date=today).first()
-    if not delivery or not delivery.candidate_ids:
-        return {"date": today, "candidates": []}
-    cands = db.query(models.Candidate).filter(models.Candidate.id.in_(delivery.candidate_ids)).all()
-    ordered = sorted(cands, key=lambda c: delivery.candidate_ids.index(c.id))
-    return {"date": today, "delivery_id": delivery.id, "quality_floor": delivery.quality_floor,
-            "candidates": [_candidate_dto(c) for c in ordered]}
+    return _delivery_payload(today, delivery, db)
+
+
+@app.get("/feed/by-date/{date}")
+def feed_by_date(date: str, user: str = Depends(require_auth), db: Session = Depends(get_db)):
+    delivery = db.query(models.DailyDelivery).filter_by(date=date).first()
+    return _delivery_payload(date, delivery, db)
+
+
+@app.get("/feed/dates")
+def feed_dates(user: str = Depends(require_auth), db: Session = Depends(get_db)):
+    """Lista alla leveranser senaste 30 dagarna med beslutsräknare."""
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=30)).isoformat()
+    deliveries = (
+        db.query(models.DailyDelivery)
+        .filter(models.DailyDelivery.date >= cutoff)
+        .order_by(models.DailyDelivery.date.desc())
+        .all()
+    )
+    out = []
+    for d in deliveries:
+        cands = db.query(models.Candidate).filter(models.Candidate.id.in_(d.candidate_ids or [])).all()
+        decided = 0
+        pending = 0
+        for c in cands:
+            if c.decisions:
+                decided += 1
+            else:
+                pending += 1
+        out.append({
+            "date": d.date,
+            "candidate_count": d.candidate_count,
+            "decided": decided,
+            "pending": pending,
+        })
+    return {"dates": out}
 
 
 @app.get("/candidate/{cand_id}")
@@ -175,6 +233,62 @@ def kill_switch_state(user: str = Depends(require_auth)):
     return KILL_SWITCH
 
 
+@app.get("/export/decisions.csv")
+def export_decisions(
+    days: int = 7,
+    user: str = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """CSV-export av kandidater + beslut för de senaste `days` dagarna."""
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=max(1, min(days, 90)))).isoformat()
+    deliveries = (
+        db.query(models.DailyDelivery)
+        .filter(models.DailyDelivery.date >= cutoff)
+        .order_by(models.DailyDelivery.date.asc())
+        .all()
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "date", "rank", "video_id", "url", "channel_title", "subscribers",
+        "is_short", "views", "likes", "comments", "total_score",
+        "velocity", "engagement", "overperformance", "profile_match",
+        "story", "reachability", "originality", "ai_generated",
+        "verdict", "decided_at", "note", "title",
+    ])
+    for d in deliveries:
+        ids = d.candidate_ids or []
+        cands = db.query(models.Candidate).filter(models.Candidate.id.in_(ids)).all()
+        by_id = {c.id: c for c in cands}
+        for rank, cid in enumerate(ids, start=1):
+            c = by_id.get(cid)
+            if not c:
+                continue
+            decision = max(c.decisions, key=lambda x: x.decided_at) if c.decisions else None
+            s = c.scores or {}
+            def sub(k): return (s.get(k) or {}).get("norm") if isinstance(s.get(k), dict) else None
+            w.writerow([
+                d.date, rank, c.video_id, f"https://youtube.com/watch?v={c.video_id}",
+                c.channel_title or "", c.channel_subscribers or 0,
+                "short" if c.is_short else "long", c.views or 0, c.likes or 0, c.comments or 0,
+                c.total_score or 0,
+                sub("velocity"), sub("engagement"), sub("overperformance"),
+                sub("profile_match"), sub("story"), sub("reachability"), sub("originality"),
+                "yes" if s.get("ai_generated") else "no",
+                decision.verdict if decision else "",
+                decision.decided_at.isoformat() if decision else "",
+                (decision.note or "") if decision else "",
+                c.title or "",
+            ])
+    buf.seek(0)
+    today = datetime.now(timezone.utc).date().isoformat()
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="wla-decisions-{today}.csv"'},
+    )
+
+
 @app.post("/admin/trigger-scout")
 def trigger_scout(user: str = Depends(require_auth)):
     """Manuell scouting-körning från statuspanelen."""
@@ -206,3 +320,19 @@ def status_panel(user: str = Depends(require_auth), db: Session = Depends(get_db
             for r in runs
         ],
     }
+
+
+# ---- Frontend static (SPA) ----
+# Bundle:n läggs i /app/frontend i Docker-imagen. Lokalt finns ../frontend/dist.
+_FRONTEND_DIR = Path(os.environ.get("FRONTEND_DIST", Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"))
+
+if _FRONTEND_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=_FRONTEND_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        # API-rutter har redan matchat; allt annat → index.html (React Router tar över)
+        index = _FRONTEND_DIR / "index.html"
+        if index.exists():
+            return FileResponse(index)
+        raise HTTPException(404, "Frontend not built")

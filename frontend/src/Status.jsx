@@ -25,10 +25,20 @@ export default function Status() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Status</h1>
-        <button onClick={triggerScout} disabled={busy}
-          className="px-3 py-1.5 text-sm rounded-md bg-slate-900 text-white hover:bg-slate-700 disabled:bg-slate-400">
-          {busy ? 'Kör…' : 'Trigga scouting nu'}
-        </button>
+        <div className="flex gap-2">
+          <a href="/api/export/decisions.csv?days=7"
+            className="px-3 py-1.5 text-sm rounded-md border border-slate-300 hover:bg-slate-100">
+            Export 7d CSV
+          </a>
+          <a href="/api/export/decisions.csv?days=30"
+            className="px-3 py-1.5 text-sm rounded-md border border-slate-300 hover:bg-slate-100">
+            Export 30d CSV
+          </a>
+          <button onClick={triggerScout} disabled={busy}
+            className="px-3 py-1.5 text-sm rounded-md bg-slate-900 text-white hover:bg-slate-700 disabled:bg-slate-400">
+            {busy ? 'Kör…' : 'Trigga scouting nu'}
+          </button>
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4">

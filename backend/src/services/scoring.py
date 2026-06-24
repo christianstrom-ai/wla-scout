@@ -123,6 +123,47 @@ AGGREGATOR_HINTS = re.compile(
 )
 CREDIT_TO = re.compile(r"\b(credit\s*(?:to|:)|via\b|original\s*by|©|reposted)\b", re.IGNORECASE)
 
+# Heuristik för uppenbart AI-genererat innehåll. Hårdfilter i scout:
+# matchar en av dessa → kandidaten kommer aldrig nå LLM eller feed.
+AI_CHANNEL_PATTERNS = re.compile(
+    r"\b("
+    r"ai\s+(pet|animal|cat|dog|wildlife|stories|tales)|"
+    r"(animal|pet|cat|dog)\s+(tales|stories|moments|world)\s*(daily|24|7|365|hd|tv|official)?|"
+    r"(amazing|incredible|epic|best|top)\s+(animal|pet|cat|dog)|"
+    r"(generated|created|made)\s+(with|using|by)\s+ai|"
+    r"sora|veo\s+3|runway|pika\s+labs|midjourney|stable\s+diffusion"
+    r")\b",
+    re.IGNORECASE,
+)
+AI_DESCRIPTION_PATTERNS = re.compile(
+    r"\b("
+    r"ai[-\s]?generated|"
+    r"generated\s+(with|by)\s+ai|"
+    r"made\s+(with|using)\s+ai|"
+    r"created\s+(with|using|by)\s+(sora|veo|runway|pika|midjourney|stable\s+diffusion)|"
+    r"#aiart|#aianimal|#aigenerated"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def looks_ai_heuristic(*, title: str, description: str | None, channel_title: str | None, channel_description: str | None) -> tuple[bool, str | None]:
+    """Snabb regex-pre-filter för uppenbart AI-innehåll. Returnerar
+    (is_ai, reason) — om reason är None passerade kandidaten."""
+    ct = channel_title or ""
+    cd = channel_description or ""
+    desc = description or ""
+    if AI_CHANNEL_PATTERNS.search(ct):
+        return True, f"kanalnamn matchar AI-mönster: '{ct}'"
+    if AI_DESCRIPTION_PATTERNS.search(desc) or AI_DESCRIPTION_PATTERNS.search(cd):
+        return True, "beskrivning nämner AI-generering"
+    if AI_DESCRIPTION_PATTERNS.search(title):
+        return True, "titel nämner AI-generering"
+    # Tom kanalbeskrivning + generisk kanalnamn = misstänkt
+    if not cd.strip() and re.search(r"^(amazing|epic|cute|best|top|incredible|wholesome)\s+(animal|pet|cat|dog|wildlife)", ct.strip(), re.IGNORECASE):
+        return True, "generisk kanalnamn utan biografisk info"
+    return False, None
+
 
 def score_originality(
     *,

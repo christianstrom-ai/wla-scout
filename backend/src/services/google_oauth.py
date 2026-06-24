@@ -12,9 +12,11 @@ from ..config import settings
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
-    "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
+# yt-analytics-monetary.readonly borttagen — Google klassar den som
+# sensitive scope och blockar appar utan verification (privacy policy +
+# demo video, vecka-långt flow). Vi behöver bara views/retention.
 
 
 def _client_secret_dict() -> dict:

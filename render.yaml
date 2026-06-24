@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: wla-scout
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /health
+    disk:
+      name: wla-scout-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:////data/wla.db
+      - key: TZ
+        value: Europe/Stockholm
+      - key: DAILY_LLM_BUDGET_USD
+        value: "6.00"
+      - key: MAX_SUBSCRIBERS
+        value: "10000"
+      - key: CANDIDATE_POOL_SIZE
+        value: "3000"
+      - key: LLM_TOPN
+        value: "300"
+      - key: QUALITY_FLOOR
+        value: "55"
+      - key: WLA_CHANNEL_ID
+        value: UCz2RMMEv5CNrOKJhs7BvLpw
+      - key: WLA_PUBLISHED_SHEET_ID
+        value: 1taCKPB-H5K5fXRbQDrghDlwptzZ_BQglCbn6XM8KqbQ
+      # Secrets — fyll i via Render-dashboarden, inte här
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DASHBOARD_AUTH_PASSWORD
+        sync: false
+      - key: DASHBOARD_AUTH_SECRET
+        generateValue: true

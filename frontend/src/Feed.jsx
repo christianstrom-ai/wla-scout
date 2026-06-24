@@ -1,22 +1,31 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api } from './api.js';
+// useState används både i Feed och i Expanded
 
 export default function Feed() {
   const [data, setData] = useState(null);
   const [openId, setOpenId] = useState(null);
-  const { id: clipId } = useParams();
-  async function refresh() { setData(await api('/feed/today')); }
-  useEffect(() => { refresh(); }, []);
+  const { id: clipId, date: routeDate } = useParams();
+
+  async function refresh() {
+    const path = routeDate ? `/feed/by-date/${routeDate}` : '/feed/today';
+    setData(await api(path));
+  }
+  useEffect(() => { refresh(); }, [routeDate]);
   useEffect(() => { if (clipId) setOpenId(clipId); }, [clipId]);
 
   if (!data) return <div className="text-slate-500">Laddar…</div>;
+  const isHistorical = !!routeDate;
   return (
     <div>
       <div className="flex items-baseline justify-between mb-4">
-        <h1 className="text-xl font-bold">Dagens feed · {data.date}</h1>
-        <div className="text-xs text-slate-500">
-          {data.candidates.length} kandidater · golv {data.quality_floor}
+        <h1 className="text-xl font-bold">
+          {isHistorical ? 'Feed' : 'Dagens feed'} · {data.date}
+        </h1>
+        <div className="text-xs text-slate-500 flex items-center gap-3">
+          <Link to="/history" className="text-blue-600 hover:underline">← Historik (30d)</Link>
+          <span>{data.candidates.length} kandidater · golv {data.quality_floor}</span>
         </div>
       </div>
       {data.candidates.length === 0 && <Empty />}
@@ -59,6 +68,12 @@ function Card({ c, rank, open, onToggle, onDecided }) {
             {c.source_confidence === 'low' && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">misstänkt dublett</span>
             )}
+            {c.scores?.ai_generated && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">AI-misstanke</span>
+            )}
+            {c.total_score < (c.quality_floor ?? 55) && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">under floor</span>
+            )}
           </div>
           <div className="font-semibold text-sm truncate">{c.title}</div>
           <div className="text-xs text-slate-500 mt-0.5">
@@ -85,9 +100,35 @@ const SCORE_LABELS = {
   originality: 'Originalkälla',
 };
 
+const REJECT_CATEGORIES = [
+  'AI-genererat',
+  'Fel ämne',
+  'Ingen story',
+  'Dålig kvalitet',
+  'Ej originalkälla',
+  'Kontakt saknas',
+  'Redan publicerat',
+];
+
 function Expanded({ c, onDecided }) {
-  async function decide(verdict) {
-    await api(`/candidate/${c.id}/decision`, { method: 'POST', body: JSON.stringify({ verdict }) });
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [note, setNote] = useState('');
+  function toggleCat(cat) {
+    setCategories(categories.includes(cat)
+      ? categories.filter(c => c !== cat)
+      : [...categories, cat]);
+  }
+  async function decide(verdict, payload = {}) {
+    const noteText = [
+      payload.categories?.length ? payload.categories.join(', ') : null,
+      payload.note?.trim() || null,
+    ].filter(Boolean).join(' · ');
+    await api(`/candidate/${c.id}/decision`, {
+      method: 'POST',
+      body: JSON.stringify({ verdict, note: noteText || null }),
+    });
+    setNoteOpen(false); setCategories([]); setNote('');
     onDecided();
   }
   return (
@@ -131,12 +172,44 @@ function Expanded({ c, onDecided }) {
         <div className="flex gap-2">
           <button onClick={() => decide('snooze')}
             className="px-3 py-1.5 text-xs rounded-md border border-slate-300 hover:bg-slate-100">Snooze</button>
-          <button onClick={() => decide('no')}
+          <button onClick={() => setNoteOpen(true)}
             className="px-3 py-1.5 text-xs rounded-md bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">Nej</button>
           <button onClick={() => decide('yes')}
             className="px-3 py-1.5 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Ja</button>
         </div>
       </div>
+      {noteOpen && (
+        <div className="bg-red-50/70 border border-red-200 rounded-lg p-3 space-y-3">
+          <div>
+            <div className="text-xs font-semibold text-red-900 mb-2">Varför valde du bort detta klipp?</div>
+            <div className="flex flex-wrap gap-1.5">
+              {REJECT_CATEGORIES.map(cat => (
+                <button key={cat} onClick={() => toggleCat(cat)}
+                  className={`px-2 py-1 text-[11px] rounded-md border transition-colors ${
+                    categories.includes(cat)
+                      ? 'bg-red-600 text-white border-red-600'
+                      : 'bg-white text-red-700 border-red-300 hover:bg-red-100'
+                  }`}>
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder="(valfritt fritext)"
+            className="w-full text-xs px-2 py-1.5 border border-red-200 rounded-md resize-none focus:outline-none focus:border-red-400"
+            rows={2}
+          />
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setNoteOpen(false); setCategories([]); setNote(''); }}
+              className="px-3 py-1 text-xs rounded-md border border-slate-300 hover:bg-slate-100">Avbryt</button>
+            <button onClick={() => decide('no', { categories, note })}
+              className="px-3 py-1 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Spara nej</button>
+          </div>
+        </div>
+      )}
       {c.decision && (
         <div className="text-xs text-slate-500 italic">
           Beslut: {c.decision.verdict} · {new Date(c.decision.decided_at).toLocaleString('sv-SE')}

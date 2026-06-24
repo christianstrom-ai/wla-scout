@@ -21,7 +21,7 @@ from .youtube import YouTubeClient, parse_iso8601_duration, is_shorts, looks_eng
 from .scoring import (
     score_velocity, score_engagement, score_overperformance,
     score_profile_match, score_reachability, score_originality,
-    combine, pick_weights,
+    combine, pick_weights, looks_ai_heuristic,
 )
 from .contact import extract_contact
 from .llm import score_story
@@ -29,16 +29,24 @@ from .winner_profile import get_active_profile
 
 
 def _build_queries(profile: WinnerProfile | None) -> list[str]:
-    if not profile or not profile.keywords:
-        return [
-            "rescue dog", "stray cat saved", "animal friendship",
-            "wildlife encounter", "pet reunion",
-        ]
-    seeds = []
-    for kw in profile.keywords[:25]:
-        if kw.get("n", 1) >= 2:  # föredra fraser
+    """Bygger 60-100 distinkta queries genom att kombinera vinnarprofilens
+    n-gram med kompletterande modifierare. Räcker till 90 sökningar/dygn."""
+    seeds: list[str] = []
+    if profile and profile.keywords:
+        # Plocka topp-50 ngram, föredra 2-3-gram (mer specifika)
+        for kw in profile.keywords[:80]:
             seeds.append(kw["ngram"])
-    return seeds[:15] or [k["ngram"] for k in profile.keywords[:10]]
+    # Generella fallbacks om profil saknas eller är tunn
+    base = [
+        "rescue dog", "rescue cat", "stray animal saved", "animal friendship",
+        "wildlife encounter", "pet reunion", "abandoned puppy found",
+        "kitten rescue", "rescue story", "feel good animal",
+        "wholesome animal", "animal adoption", "kind to animals",
+        "saved animal life", "rescue wildlife", "dog reunited owner",
+        "stray puppy adopted", "homeless cat",
+    ]
+    seeds = list(dict.fromkeys(seeds + base))[:100]
+    return seeds
 
 
 def run_scout(db: Session) -> dict:
@@ -71,7 +79,9 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
 
     pool: dict[str, dict] = {}                # video_id → stub
     published_after = datetime.now(timezone.utc) - timedelta(days=7)
-    quota_target = 1500  # spend up to 1500 enheter på search → 15 sökningar
+    # Spend upp till 9000 enheter på search (90 sökningar × 100). Resterande
+    # 1000 går till metadata/kanal-batches. Håller oss inom 10k-takdaylig kvot.
+    quota_target = 9000
     sub_titles_for_dedup = _recent_titles(db)
 
     with YouTubeClient() as yt:
@@ -159,6 +169,17 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
             filtered_out_count += 1
             continue  # logga separat om vi vill granska
 
+        # Hårdfilter mot uppenbart AI-genererat innehåll (regex-baserat).
+        # Sparar LLM-anrop och förhindrar att de når feeden.
+        ai_flag, ai_reason = looks_ai_heuristic(
+            title=title, description=description,
+            channel_title=ch_sn.get("title"),
+            channel_description=ch_sn.get("description"),
+        )
+        if ai_flag:
+            filtered_out_count += 1
+            continue
+
         cand = Candidate(
             video_id=vid,
             channel_id=channel_id,
@@ -202,16 +223,29 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
             "thumbnail_url": c.thumbnail_url,
         })
         if result:
-            c.scores = {**c.scores, "story": {"raw": result["score"], "norm": float(result["score"]), "explain": result["reason"]}}
+            c.scores = {
+                **c.scores,
+                "story": {"raw": result["score"], "norm": float(result["score"]), "explain": result["reason"]},
+                "ai_generated": bool(result.get("looks_ai_generated", False)),
+            }
         else:
             c.scores = {**c.scores, "story": {"raw": None, "norm": 50.0, "explain": "LLM avstängd / budget slut"}}
         c.total_score = combine(c.scores, pick_weights(c.is_short))
 
     db.flush()
 
-    # Välj ut feed-kandidater (över quality_floor, upp till 10)
-    candidates_sorted = sorted(built, key=lambda c: c.total_score or 0, reverse=True)
-    selected = [c for c in candidates_sorted if (c.total_score or 0) >= settings.quality_floor][:10]
+    # Välj ut feed-kandidater. Garantera ALLTID minst 10 i feeden så
+    # redaktionen kan bedöma fler kandidater (= mer feedback för
+    # vikt-kalibreringen). Markera fortfarande de under quality_floor
+    # så det syns i UI:t att de är "under floor".
+    candidates_sorted = [c for c in sorted(built, key=lambda c: c.total_score or 0, reverse=True)
+                         if not (c.scores or {}).get("ai_generated", False)]
+    above_floor = [c for c in candidates_sorted if (c.total_score or 0) >= settings.quality_floor]
+    selected = above_floor[:10]
+    if len(selected) < 10:
+        # Fyll på med de bästa under floor tills vi når 10
+        remaining = [c for c in candidates_sorted if c not in selected]
+        selected = selected + remaining[: 10 - len(selected)]
 
     delivery = DailyDelivery(
         date=today,

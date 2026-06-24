@@ -1,5 +1,8 @@
 """YouTube Data API v3 — sök + metadata + kanalstatistik.
 
+Auth: API-key om YOUTUBE_API_KEY finns, annars OAuth-token (samma som
+används till Analytics). API-key sparar lite kvota men OAuth räcker.
+
 Kvotkostnader vi tracker:
   search.list           = 100
   videos.list           = 1
@@ -26,9 +29,16 @@ class QuotaError(RuntimeError):
 
 class YouTubeClient:
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or settings.youtube_api_key
+        self.api_key = api_key or settings.youtube_api_key or None
+        self._oauth_token: str | None = None
         if not self.api_key:
-            raise RuntimeError("YOUTUBE_API_KEY saknas")
+            # Försök hämta OAuth-token som fallback
+            try:
+                from .google_oauth import require_credentials
+                creds = require_credentials()
+                self._oauth_token = creds.token
+            except Exception as exc:
+                raise RuntimeError(f"YOUTUBE_API_KEY saknas och OAuth-fallback misslyckades: {exc}")
         self._quota_used = 0
         self._http = httpx.Client(timeout=20.0)
 
@@ -52,8 +62,12 @@ class YouTubeClient:
         reraise=True,
     )
     def _get(self, path: str, params: dict, cost: int) -> dict:
-        params = {**params, "key": self.api_key}
-        r = self._http.get(f"{API}/{path}", params=params)
+        headers = {}
+        if self.api_key:
+            params = {**params, "key": self.api_key}
+        elif self._oauth_token:
+            headers["Authorization"] = f"Bearer {self._oauth_token}"
+        r = self._http.get(f"{API}/{path}", params=params, headers=headers)
         if r.status_code == 403 and "quotaExceeded" in r.text:
             raise QuotaError("YouTube daily quota exceeded")
         r.raise_for_status()

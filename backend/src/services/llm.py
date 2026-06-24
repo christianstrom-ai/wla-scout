@@ -26,21 +26,45 @@ PRICING = {
     "claude-sonnet-4-6":         {"in": 3.00, "out": 15.00},
 }
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v3"
 
-SYSTEM = """Du bedömer story-/intervjupotential för YouTube-klipp inför
-publicering på "We love animals" (WLA). WLA gör korta, känslosamma klipp
-ofta kombinerat med en intervju med personen som filmade.
+SYSTEM = """Du bedömer YouTube-klipp inför publicering på "We love animals" (WLA).
+WLA publicerar korta, känslosamma KLIPP MED VERKLIGA DJUR OCH MÄNNISKOR
+kombinerat med en intervju med personen som filmade. WLA publicerar
+ALDRIG AI-genererat material — det är ett absolut hinder.
 
-Du ser ALDRIG videon — bara titel, beskrivning, thumbnail och ev. transkript.
-Bedöm utifrån DET vad chansen är att klippet (a) har en tydlig identifierbar
-person bakom, (b) en historia värd att berätta, (c) går att intervjua.
+Du ser titel, beskrivning, thumbnail-URL och kanalnamn. Inte videon.
+
+Bedöm två saker:
+
+1. STORY (0-100): chansen att klippet (a) har en identifierbar person
+   bakom, (b) en historia värd att berätta, (c) går att intervjua. Anonyma
+   virala sekunder = lågt. Tydlig namngiven person + händelse = högt.
+
+2. LOOKS_AI_GENERATED (true/false): VAR HÅRD med att flagga. Hellre fel-
+   flagga än släppa igenom. Tecken som var och en räcker för true:
+   - "AI", "Stories", "Tales", "Compilation", "Animals Daily" i kanalnamn
+     när det inte är ett genuint koncept
+   - Kanalnamn med generiska adjektiv ("Amazing", "Incredible", "Best") +
+     animal-tema utan personlig info
+   - Beskrivning nämner Sora, Veo, Runway, Pika, Midjourney, Stable Diffusion,
+     "AI-generated", "generated with", "made with AI"
+   - Övernaturligt perfekt thumbnail (osannolika djurkonstellationer,
+     omöjliga miljöer, för rena bilder)
+   - Beskrivning utan platsangivelser, datum eller personnamn
+   - Generiska "wholesome" eller "heartwarming" som enda beskrivning
+   - Titel som ren list-form ("Animals saving animals", "Top 10 cute moments")
+     utan specifik händelse eller person
+   - Kanalnamn med uppenbara numerologiska mönster (T0ny, c@t lover)
+   - Korta beskrivningar (< 100 tecken) i kombination med generisk titel
+   - Inga taggar, inga länkar, ingen biografisk info i kanalbeskrivning
 
 Returnera ENBART JSON:
 {
   "score": <0-100>,
   "reason": "<en mening på engelska, max 20 ord>",
-  "confidence": "high" | "medium" | "low"
+  "confidence": "high" | "medium" | "low",
+  "looks_ai_generated": true | false
 }"""
 
 
@@ -167,4 +191,5 @@ def _parse(text: str) -> Optional[dict]:
         "score": int(max(0, min(100, d.get("score", 0)))),
         "reason": str(d.get("reason", ""))[:200],
         "confidence": d.get("confidence", "medium"),
+        "looks_ai_generated": bool(d.get("looks_ai_generated", False)),
     }

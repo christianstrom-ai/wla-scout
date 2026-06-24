@@ -11,7 +11,8 @@ export default function Layout() {
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-6">
           <div className="font-bold text-base">WLA Scout</div>
           <nav className="flex gap-1">
-            <NavLink to="/feed" className={link}>Dagens feed</NavLink>
+            <NavLink to="/feed" end className={link}>Dagens feed</NavLink>
+            <NavLink to="/history" className={link}>Historik</NavLink>
             <NavLink to="/status" className={link}>Status</NavLink>
             <NavLink to="/learning" className={link}>Inlärning</NavLink>
           </nav>
