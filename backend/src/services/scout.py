@@ -11,6 +11,8 @@ Flöde:
   8. Välj kandidater över quality_floor → daily_delivery.
 """
 from __future__ import annotations
+import random
+import time
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -85,13 +87,20 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
     sub_titles_for_dedup = _recent_titles(db)
 
     with YouTubeClient() as yt:
-        for q in queries:
+        for i, q in enumerate(queries):
             if yt.quota_used >= quota_target:
                 break
+            # Throttling: Google har en hemlig per-sekund-gräns ovanpå dygnskvoten.
+            # Utan delay 429:ar de efter ~18 anrop. 1.5-2.5s med jitter funkar.
+            if i > 0:
+                time.sleep(1.5 + random.random())
             try:
                 items = yt.search_videos(query=q, published_after=published_after)
             except Exception as exc:  # noqa: BLE001
                 run.error = (run.error or "") + f"\nsearch err '{q}': {exc}"[:500]
+                # Extra backoff vid 429 så vi inte fortsätter banka
+                if "429" in str(exc):
+                    time.sleep(8)
                 continue
             for it in items:
                 vid = it["id"].get("videoId")
