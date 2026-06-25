@@ -61,43 +61,43 @@ function Card({ c, rank, open, onToggle, onDecided }) {
   const cardClass = style ? style.card : 'bg-white border-slate-200';
   const hoverClass = style ? style.hover : 'hover:bg-slate-50';
   return (
-    <div className={`border-2 rounded-xl overflow-hidden transition-colors ${cardClass}`}>
-      <button onClick={onToggle} className={`w-full text-left p-3 flex items-center gap-3 ${hoverClass}`}>
-        <div className="w-32 aspect-video bg-slate-100 rounded overflow-hidden flex-shrink-0">
+    <div className={`border-2 rounded-lg overflow-hidden transition-colors ${cardClass}`}>
+      <button onClick={onToggle} className={`w-full text-left p-2 flex items-center gap-2 ${hoverClass}`}>
+        <div className="w-24 aspect-video bg-slate-100 rounded overflow-hidden flex-shrink-0">
           {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 leading-tight">
             <span className="font-mono">#{rank}</span>
             {style && (
-              <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${style.badge}`}>
+              <span className={`text-[10px] font-bold uppercase px-1 py-0 rounded ${style.badge}`}>
                 {verdict === 'yes' ? 'Ja' : verdict === 'no' ? 'Nej' : 'Snooze'}
               </span>
             )}
-            <span>{c.channel_title}</span>
+            <span className="truncate max-w-[180px]">{c.channel_title}</span>
             <span>·</span>
-            <span>{(c.channel_subscribers ?? 0).toLocaleString('sv-SE')} subs</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.is_short ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
-              {c.is_short ? 'Short' : 'Long-form'}
+            <span>{(c.channel_subscribers ?? 0).toLocaleString('sv-SE')}</span>
+            <span className={`text-[10px] px-1 py-0 rounded ${c.is_short ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+              {c.is_short ? 'S' : 'L'}
             </span>
             {c.source_confidence === 'low' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">misstänkt dublett</span>
+              <span className="text-[10px] px-1 py-0 rounded bg-yellow-100 text-yellow-800">dublett?</span>
             )}
             {c.scores?.ai_generated && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">AI-misstanke</span>
+              <span className="text-[10px] px-1 py-0 rounded bg-purple-100 text-purple-800">AI?</span>
             )}
             {c.total_score < (c.quality_floor ?? 55) && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">under floor</span>
+              <span className="text-[10px] px-1 py-0 rounded bg-slate-100 text-slate-600">under</span>
             )}
           </div>
-          <div className="font-semibold text-sm truncate">{c.title}</div>
-          <div className="text-xs text-slate-500 mt-0.5">
-            {(c.views ?? 0).toLocaleString('sv-SE')} views · {(c.likes ?? 0).toLocaleString('sv-SE')} likes · {(c.comments ?? 0).toLocaleString('sv-SE')} comments
+          <div className="font-semibold text-sm truncate leading-tight mt-0.5">{c.title}</div>
+          <div className="text-[11px] text-slate-500 leading-tight">
+            {(c.views ?? 0).toLocaleString('sv-SE')} v · {(c.likes ?? 0).toLocaleString('sv-SE')} l · {(c.comments ?? 0).toLocaleString('sv-SE')} k
           </div>
         </div>
-        <div className="text-right pr-3">
-          <div className="text-2xl font-bold font-mono">{c.total_score?.toFixed(0) ?? '–'}</div>
-          <div className="text-[10px] uppercase text-slate-400">totalscore</div>
+        <div className="text-right pr-2 leading-none">
+          <div className="text-xl font-bold font-mono">{c.total_score?.toFixed(0) ?? '–'}</div>
+          <div className="text-[9px] uppercase text-slate-400 mt-0.5">score</div>
         </div>
       </button>
       {open && <Expanded c={c} onDecided={onDecided} />}
