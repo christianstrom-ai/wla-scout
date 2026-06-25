@@ -243,11 +243,15 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
             "thumbnail_url": c.thumbnail_url,
         })
         if result:
+            signals = result.get("ai_signals") or []
+            # LLM hedgar — listar 3-5 AI-signaler men sätter bool=False.
+            # ≥2 signaler = behandla som AI oavsett vad bool säger.
+            is_ai = bool(result.get("looks_ai_generated", False)) or len(signals) >= 2
             c.scores = {
                 **c.scores,
                 "story": {"raw": result["score"], "norm": float(result["score"]), "explain": result["reason"]},
-                "ai_generated": bool(result.get("looks_ai_generated", False)),
-                "ai_signals": result.get("ai_signals") or [],
+                "ai_generated": is_ai,
+                "ai_signals": signals,
             }
         else:
             c.scores = {**c.scores, "story": {"raw": None, "norm": 50.0, "explain": "LLM avstängd / budget slut"}}
