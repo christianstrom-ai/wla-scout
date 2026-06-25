@@ -147,6 +147,38 @@ AI_DESCRIPTION_PATTERNS = re.compile(
 )
 
 
+# Hårdfilter: kandidaten måste nämna något djurord i titel/beskrivning.
+# Utan detta blir feeden full av kricket, politik och filmrecensioner.
+ANIMAL_TOPIC_RE = re.compile(
+    r"\b("
+    r"animal|pet|kitten|kittens|cat|cats|kitty|puppy|puppies|dog|dogs|doggo|"
+    r"wildlife|stray|rescue|rescued|adopt|adopted|adoption|shelter|"
+    r"horse|horses|pony|foal|colt|filly|stallion|mare|"
+    r"bird|birds|owl|parrot|eagle|hawk|falcon|crow|raven|sparrow|pigeon|seagull|"
+    r"wolf|wolves|fox|foxes|bear|bears|deer|moose|elk|"
+    r"raccoon|squirrel|hedgehog|otter|beaver|opossum|skunk|"
+    r"rabbit|rabbits|bunny|bunnies|hamster|guinea[-\s]?pig|ferret|chinchilla|"
+    r"monkey|monkeys|ape|apes|gorilla|chimp|orangutan|baboon|"
+    r"elephant|giraffe|zebra|lion|tiger|leopard|cheetah|panther|jaguar|cougar|"
+    r"sheep|lamb|cow|cows|cattle|calf|goat|pig|piglet|donkey|llama|alpaca|"
+    r"dolphin|whale|shark|seal|walrus|orca|manatee|"
+    r"turtle|tortoise|lizard|gecko|iguana|snake|frog|toad|salamander|"
+    r"chicken|chicks|duck|ducks|duckling|goose|geese|swan|peacock|hen|rooster|"
+    r"koala|kangaroo|wallaby|panda|sloth|wombat|tasmanian|"
+    r"mouse|mice|rat|rats|mole|bat|bats|"
+    r"farm[-\s]+animal|sea[-\s]+creature|reptile|amphibian|mammal|marsupial|"
+    r"vet|veterinarian|veterinary"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_animal_topic(*, title: str | None, description: str | None) -> bool:
+    """True om titel eller beskrivnings första 500 tecken nämner djurord."""
+    text = f"{title or ''} {(description or '')[:500]}"
+    return bool(ANIMAL_TOPIC_RE.search(text))
+
+
 def looks_ai_heuristic(*, title: str, description: str | None, channel_title: str | None, channel_description: str | None) -> tuple[bool, str | None]:
     """Snabb regex-pre-filter för uppenbart AI-innehåll. Returnerar
     (is_ai, reason) — om reason är None passerade kandidaten."""

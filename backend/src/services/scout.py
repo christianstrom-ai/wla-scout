@@ -23,7 +23,7 @@ from .youtube import YouTubeClient, parse_iso8601_duration, is_shorts, looks_eng
 from .scoring import (
     score_velocity, score_engagement, score_overperformance,
     score_profile_match, score_reachability, score_originality,
-    combine, pick_weights, looks_ai_heuristic,
+    combine, pick_weights, looks_ai_heuristic, is_animal_topic,
 )
 from .contact import extract_contact
 from .llm import score_story
@@ -147,6 +147,12 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
         title = sn.get("title", "")
         description = sn.get("description", "")
         if not (looks_english(title) and looks_english(description)):
+            continue
+
+        # Hårdfilter: måste handla om djur. Utan detta ger den boilerplate-
+        # tunga vinnarprofilen oss kricket, politik, filmrecensioner mm.
+        if not is_animal_topic(title=title, description=description):
+            filtered_out_count += 1
             continue
 
         duration_sec = parse_iso8601_duration(cd.get("duration"))

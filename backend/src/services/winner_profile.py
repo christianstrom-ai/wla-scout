@@ -17,12 +17,49 @@ from .youtube import YouTubeClient, parse_iso8601_duration
 
 WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z']{2,}")
 STOPWORDS = {
+    # Vanliga eng-stopord
     "the", "and", "for", "with", "you", "are", "this", "that", "but",
     "from", "have", "has", "was", "were", "will", "their", "they", "what",
     "when", "where", "which", "who", "how", "why", "out", "into", "over",
-    "more", "your", "our", "wla", "love", "animals", "video", "youtube",
-    "subscribe", "channel", "comment", "watch", "follow",
+    "more", "your", "our", "all", "also", "just", "than", "then", "them",
+    # WLA-brand boilerplate
+    "wla", "welovewla", "weloveanimals", "weloveanimalssubscribe",
+    "newsner", "digital", "platform", "exclusive", "emojis", "badges",
+    "member", "members", "become",
+    # Generella CTA/sociala-medier-ord
+    "subscribe", "follow", "instagram", "facebook", "tiktok", "twitter",
+    "youtube", "channel", "comment", "watch", "share", "like", "join",
+    # URL-fragment
+    "https", "http", "www", "com", "org", "net", "bit", "url",
+    "click", "link", "links",
+    # Generiska brus-ord som inte hjälper queries
+    "amazing", "incredible", "best", "top", "viral", "trending",
+    "moments", "compilation", "every", "always", "never",
+    "story", "stories", "video", "videos", "news", "show",
+    # Vår egen brand-ord
+    "love", "animals", "animal",
 }
+
+# Boilerplate-marker: text efter dessa är CTA/länk-skräp som drar
+# n-gram-frekvensen helt åt fel håll.
+BOILERPLATE_MARKERS = re.compile(
+    r"(?i)(\bsubscribe\b|become\s+a?\s*member|follow\s+us|"
+    r"check\s+out\s+(our|the)|join\s+(our|the)|"
+    r"exclusive\s+(content|emojis|videos|access)|"
+    r"https?://|www\.|bit\.ly|patreon|instagram\.com|"
+    r"facebook\.com|tiktok\.com|twitter\.com|t\.co/|"
+    r"#wla\b|@wla|#weloveanimals)"
+)
+
+
+def _strip_boilerplate(text: str) -> str:
+    """Klipp av allt efter första boilerplate-markören."""
+    if not text:
+        return ""
+    m = BOILERPLATE_MARKERS.search(text)
+    if m:
+        text = text[: m.start()]
+    return text.strip()
 
 
 def _ngrams(tokens: list[str], n: int) -> list[str]:
@@ -32,7 +69,10 @@ def _ngrams(tokens: list[str], n: int) -> list[str]:
 
 
 def _tokenize(text: str) -> list[str]:
-    return [t for t in (w.lower() for w in WORD_RE.findall(text or "")) if t not in STOPWORDS]
+    return [
+        t for t in (w.lower() for w in WORD_RE.findall(text or ""))
+        if t not in STOPWORDS and len(t) >= 3
+    ]
 
 
 def build_profile_from_public(db: Session, top_n_videos: int = 30) -> WinnerProfile | None:
@@ -78,7 +118,12 @@ def build_profile_from_public(db: Session, top_n_videos: int = 30) -> WinnerProf
         st = item.get("statistics", {})
         cd = item.get("contentDetails", {})
         views = int(st.get("viewCount") or 0)
-        text = " ".join(filter(None, [sn.get("title"), sn.get("description"), " ".join(sn.get("tags") or [])]))
+        title = sn.get("title", "") or ""
+        # Strippa boilerplate, ta första 400 tecknen av rensad beskrivning
+        description = _strip_boilerplate(sn.get("description", ""))[:400]
+        # Vikt titlar 2x: tags och senare delen av beskrivningen är skräp,
+        # titlarna fångar det redaktionellt viktiga.
+        text = f"{title} {title} {description}"
         toks = _tokenize(text)
         grams = set(toks) | set(_ngrams(toks, 2)) | set(_ngrams(toks, 3))
         for g in grams:
