@@ -289,11 +289,16 @@ def export_decisions(
 
 
 @app.post("/admin/trigger-scout")
-def trigger_scout(user: str = Depends(require_auth)):
-    """Manuell scouting-körning från statuspanelen."""
+def trigger_scout(force: bool = False, user: str = Depends(require_auth)):
+    """Manuell scouting-körning. force=true raderar dagens delivery först
+    (för att testa/dubbelköra) — använd försiktigt."""
     from .services.scout import run_scout
     from .db import SessionLocal
     with SessionLocal() as db:
+        if force:
+            today = datetime.now(timezone.utc).date().isoformat()
+            db.query(models.DailyDelivery).filter_by(date=today).delete()
+            db.commit()
         try:
             res = run_scout(db)
             return {"ok": True, "result": res}
