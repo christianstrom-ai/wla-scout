@@ -49,16 +49,31 @@ function Empty() {
   );
 }
 
+const DECISION_STYLES = {
+  yes:    { card: 'bg-emerald-50 border-emerald-300',  hover: 'hover:bg-emerald-100',  badge: 'bg-emerald-600 text-white' },
+  no:     { card: 'bg-red-50 border-red-300',          hover: 'hover:bg-red-100',      badge: 'bg-red-600 text-white' },
+  snooze: { card: 'bg-amber-50 border-amber-300',      hover: 'hover:bg-amber-100',    badge: 'bg-amber-600 text-white' },
+};
+
 function Card({ c, rank, open, onToggle, onDecided }) {
+  const verdict = c.decision?.verdict;
+  const style = DECISION_STYLES[verdict];
+  const cardClass = style ? style.card : 'bg-white border-slate-200';
+  const hoverClass = style ? style.hover : 'hover:bg-slate-50';
   return (
-    <div className={`bg-white border rounded-xl overflow-hidden ${c.decision ? 'border-emerald-200' : 'border-slate-200'}`}>
-      <button onClick={onToggle} className="w-full text-left p-3 flex items-center gap-3 hover:bg-slate-50">
+    <div className={`border-2 rounded-xl overflow-hidden transition-colors ${cardClass}`}>
+      <button onClick={onToggle} className={`w-full text-left p-3 flex items-center gap-3 ${hoverClass}`}>
         <div className="w-32 aspect-video bg-slate-100 rounded overflow-hidden flex-shrink-0">
           {c.thumbnail_url && <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
             <span className="font-mono">#{rank}</span>
+            {style && (
+              <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${style.badge}`}>
+                {verdict === 'yes' ? 'Ja' : verdict === 'no' ? 'Nej' : 'Snooze'}
+              </span>
+            )}
             <span>{c.channel_title}</span>
             <span>·</span>
             <span>{(c.channel_subscribers ?? 0).toLocaleString('sv-SE')} subs</span>
