@@ -26,14 +26,15 @@ PRICING = {
     "claude-sonnet-4-6":         {"in": 3.00, "out": 15.00},
 }
 
-PROMPT_VERSION = "v3"
+PROMPT_VERSION = "v4"
 
 SYSTEM = """Du bedömer YouTube-klipp inför publicering på "We love animals" (WLA).
 WLA publicerar korta, känslosamma KLIPP MED VERKLIGA DJUR OCH MÄNNISKOR
 kombinerat med en intervju med personen som filmade. WLA publicerar
 ALDRIG AI-genererat material — det är ett absolut hinder.
 
-Du ser titel, beskrivning, thumbnail-URL och kanalnamn. Inte videon.
+Du får SE thumbnailen som bild, samt titel/beskrivning/kanalnamn.
+Thumbnailen är din viktigaste signal för att upptäcka AI-innehåll.
 
 Bedöm två saker:
 
@@ -41,22 +42,37 @@ Bedöm två saker:
    bakom, (b) en historia värd att berätta, (c) går att intervjua. Anonyma
    virala sekunder = lågt. Tydlig namngiven person + händelse = högt.
 
-2. LOOKS_AI_GENERATED (true/false): VAR HÅRD med att flagga. Hellre fel-
-   flagga än släppa igenom. Tecken som var och en räcker för true:
+2. LOOKS_AI_GENERATED (true/false): VAR HÅRD. Hellre fel-flagga än släppa
+   igenom. Vid minsta tvivel → true.
+
+   VISUELLA TECKEN PÅ THUMBNAIL (varje räcker för true):
+   - Hud/päls som ser för glansig, plastisk eller för slät ut
+   - Konstig anatomi (för många/få tår, fel ögon, händer i omöjliga
+     positioner, extra fingrar/lemmar)
+   - Övernaturligt perfekt komposition, för ren bakgrund, studiljus
+     där det borde varit amatörfoto
+   - Osannolika djurkonstellationer (3 olika arter i ett rum,
+     djur i mänskliga kläder/poser)
+   - Ljus/skuggor som inte matchar mellan subjekt och bakgrund
+   - Watermark "Made with Sora/Veo/Runway/Pika/Midjourney"
+   - Texten i thumbnailen ser AI-genererad ut (osammanhängande
+     bokstäver, halv-läsbara symboler, skum kerning)
+   - Subjekt + bakgrund verkar inte ha samma fokus/skärpa
+   - Ögon utan reflektioner eller med osymmetriska reflektioner
+   - För perfekta kattfarder/hundansikten utan asymmetrier
+
+   TEXTUELLA TECKEN (varje räcker för true):
    - "AI", "Stories", "Tales", "Compilation", "Animals Daily" i kanalnamn
-     när det inte är ett genuint koncept
-   - Kanalnamn med generiska adjektiv ("Amazing", "Incredible", "Best") +
-     animal-tema utan personlig info
+   - Kanalnamn med generiska adjektiv ("Amazing", "Incredible", "Best")
+     + animal-tema utan personlig info
    - Beskrivning nämner Sora, Veo, Runway, Pika, Midjourney, Stable Diffusion,
      "AI-generated", "generated with", "made with AI"
-   - Övernaturligt perfekt thumbnail (osannolika djurkonstellationer,
-     omöjliga miljöer, för rena bilder)
    - Beskrivning utan platsangivelser, datum eller personnamn
    - Generiska "wholesome" eller "heartwarming" som enda beskrivning
    - Titel som ren list-form ("Animals saving animals", "Top 10 cute moments")
      utan specifik händelse eller person
-   - Kanalnamn med uppenbara numerologiska mönster (T0ny, c@t lover)
-   - Korta beskrivningar (< 100 tecken) i kombination med generisk titel
+   - Kanalnamn med numerologiska mönster (T0ny, c@t lover)
+   - Korta beskrivningar (< 100 tecken) + generisk titel
    - Inga taggar, inga länkar, ingen biografisk info i kanalbeskrivning
 
 Returnera ENBART JSON:
@@ -64,7 +80,8 @@ Returnera ENBART JSON:
   "score": <0-100>,
   "reason": "<en mening på engelska, max 20 ord>",
   "confidence": "high" | "medium" | "low",
-  "looks_ai_generated": true | false
+  "looks_ai_generated": true | false,
+  "ai_signals": ["<kort fras per upptäckt signal, max 3 st>"]
 }"""
 
 
@@ -77,15 +94,20 @@ def _prompt_hash(title: str, description: str | None, model: str) -> str:
     return h.hexdigest()
 
 
-def _user_msg(c: dict) -> str:
+def _user_content(c: dict) -> list:
+    """Returnerar multimodalt content (image + text) för Anthropic messages API.
+    Thumbnail-bilden skickas som image_url så modellen kan se den direkt."""
+    blocks: list = []
+    thumb = c.get("thumbnail_url")
+    if thumb:
+        blocks.append({"type": "image", "source": {"type": "url", "url": thumb}})
     parts = [f"Title: {c.get('title')}"]
     if c.get("channel_title"):
         parts.append(f"Channel: {c['channel_title']}")
     if c.get("description"):
         parts.append(f"Description: {c['description'][:1500]}")
-    if c.get("thumbnail_url"):
-        parts.append(f"Thumbnail URL: {c['thumbnail_url']}")
-    return "\n\n".join(parts)
+    blocks.append({"type": "text", "text": "\n\n".join(parts)})
+    return blocks
 
 
 def _cost(usage: anthropic.types.Usage | dict, model: str) -> float:
@@ -143,13 +165,25 @@ def _call(db: Session, run_log: RunLog, candidate: dict, model: str) -> Optional
     try:
         resp = client.messages.create(
             model=model,
-            max_tokens=200,
+            max_tokens=300,
             system=SYSTEM,
-            messages=[{"role": "user", "content": _user_msg(candidate)}],
+            messages=[{"role": "user", "content": _user_content(candidate)}],
         )
     except Exception as exc:  # noqa: BLE001
-        run_log.error = (run_log.error or "") + f"\nLLM err {model}: {exc}"[:500]
-        return None
+        # Om thumbnail-URL inte kunde hämtas av Anthropic, försök igen
+        # utan bild så vi inte tappar bedömningen helt.
+        try:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=300,
+                system=SYSTEM,
+                messages=[{"role": "user", "content": [
+                    b for b in _user_content(candidate) if b.get("type") != "image"
+                ]}],
+            )
+        except Exception as exc2:  # noqa: BLE001
+            run_log.error = (run_log.error or "") + f"\nLLM err {model}: {exc2}"[:500]
+            return None
 
     text = (resp.content[0].text if resp.content else "").strip()
     parsed = _parse(text)
@@ -192,4 +226,5 @@ def _parse(text: str) -> Optional[dict]:
         "reason": str(d.get("reason", ""))[:200],
         "confidence": d.get("confidence", "medium"),
         "looks_ai_generated": bool(d.get("looks_ai_generated", False)),
+        "ai_signals": [str(s)[:80] for s in (d.get("ai_signals") or [])][:5],
     }

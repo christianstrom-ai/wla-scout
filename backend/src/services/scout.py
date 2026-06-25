@@ -232,6 +232,7 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
                 **c.scores,
                 "story": {"raw": result["score"], "norm": float(result["score"]), "explain": result["reason"]},
                 "ai_generated": bool(result.get("looks_ai_generated", False)),
+                "ai_signals": result.get("ai_signals") or [],
             }
         else:
             c.scores = {**c.scores, "story": {"raw": None, "norm": 50.0, "explain": "LLM avstängd / budget slut"}}
