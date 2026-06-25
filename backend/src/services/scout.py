@@ -113,9 +113,11 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
     weights = settings.weights_longform  # default; per-cand i scoringen
     delivered: list[Candidate] = []
     seen_video_ids = set(_existing_video_ids(db))
+    previously_delivered_video_ids = _previously_delivered_video_ids(db)
 
     candidates_built = 0
     filtered_out_count = 0
+    added_this_run_video_ids: set[str] = set()
 
     for det in details:
         vid = det["id"]
@@ -202,12 +204,15 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
             contact_found=contact["found"],
         )
         candidates_built += 1
+        added_this_run_video_ids.add(vid)
         db.add(cand)
 
     db.flush()
 
-    # Plocka topp-N från det vi byggde + räkna LLM story-score på den delen
-    built = db.query(Candidate).filter(Candidate.video_id.in_({d["id"] for d in details})).all()
+    # Plocka topp-N från det vi BYGGDE I DENNA RUN. Tidigare hämtade vi
+    # alla Candidate-rader med video_id i pool, vilket inkluderade gamla
+    # rader från tidigare körningar — duplicerade kort i feeden.
+    built = db.query(Candidate).filter(Candidate.video_id.in_(added_this_run_video_ids)).all() if added_this_run_video_ids else []
     built = [c for c in built if c.scores]
     # Preliminär totalscore (utan story)
     for c in built:
@@ -238,7 +243,8 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
     # över quality_floor (mer feedback på goda dagar utan att drunkna
     # redaktionen). Markera under-floor i UI:t.
     candidates_sorted = [c for c in sorted(built, key=lambda c: c.total_score or 0, reverse=True)
-                         if not (c.scores or {}).get("ai_generated", False)]
+                         if not (c.scores or {}).get("ai_generated", False)
+                         and c.video_id not in previously_delivered_video_ids]
     above_floor = [c for c in candidates_sorted if (c.total_score or 0) >= settings.quality_floor]
     selected = above_floor[:20]
     if len(selected) < 10:
@@ -279,3 +285,19 @@ def _existing_video_ids(db: Session) -> list[str]:
         select(Candidate.video_id).where(Candidate.first_seen_at >= cutoff)
     ).all()
     return [r[0] for r in rows]
+
+
+def _previously_delivered_video_ids(db: Session) -> set[str]:
+    """Alla video_ids som dykt upp i en DailyDelivery senaste 30 dagarna.
+    Används som säkerhetsnät så samma klipp aldrig syns två dagar i rad."""
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=settings.dedup_window_days)).isoformat()
+    deliveries = db.query(DailyDelivery).filter(DailyDelivery.date >= cutoff).all()
+    all_ids: set[str] = set()
+    for d in deliveries:
+        all_ids.update(d.candidate_ids or [])
+    if not all_ids:
+        return set()
+    rows = db.execute(
+        select(Candidate.video_id).where(Candidate.id.in_(all_ids))
+    ).all()
+    return {r[0] for r in rows if r[0]}
