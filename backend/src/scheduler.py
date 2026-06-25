@@ -11,6 +11,7 @@ from .models import DailyDelivery
 from .services.scout import run_scout
 from .services.maturity import run_maturity
 from .services.sheet_sync import run_sheet_sync
+from .services.winner_profile import build_profile_from_public, get_active_profile
 from .services.alerts import alert
 
 log = logging.getLogger("scheduler")
@@ -19,12 +20,30 @@ log = logging.getLogger("scheduler")
 def _scout_job():
     with SessionLocal() as db:
         try:
+            # Säkerställ att vinnarprofilen finns innan scout körs.
+            # Utan profil → bara 18 hårdkodade base-queries → liten pool.
+            if get_active_profile(db) is None:
+                try:
+                    build_profile_from_public(db)
+                    log.info("winner profile built (was missing)")
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("winner profile build failed: %s", exc)
             res = run_scout(db)
             log.info("scout ok: %s", res)
             _check_low_yield(db)
         except Exception as exc:  # noqa: BLE001
             alert(f"Scouting-pipeline failed: {exc}", "error")
             log.exception("scout failed")
+
+
+def _profile_job():
+    """Rebygg vinnarprofilen veckovis så nya hits från WLA-kanalen syns."""
+    with SessionLocal() as db:
+        try:
+            build_profile_from_public(db)
+            log.info("winner profile rebuilt")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("profile rebuild failed: %s", exc)
 
 
 def _maturity_job():
@@ -65,6 +84,8 @@ def setup_scheduler() -> BackgroundScheduler:
     sched.add_job(_scout_job, CronTrigger.from_crontab(settings.schedule_cron_scout, timezone=settings.tz), id="scout", replace_existing=True)
     sched.add_job(_maturity_job, CronTrigger.from_crontab(settings.schedule_cron_maturity, timezone=settings.tz), id="maturity", replace_existing=True)
     sched.add_job(_sheet_job, CronTrigger.from_crontab(settings.schedule_cron_sheet_sync, timezone=settings.tz), id="sheet_sync", replace_existing=True)
+    # Vinnarprofil rebuild varje söndag kl 03:00
+    sched.add_job(_profile_job, CronTrigger.from_crontab("0 3 * * 0", timezone=settings.tz), id="profile", replace_existing=True)
     sched.start()
     log.info("Scheduler aktiv: scout=%s maturity=%s sheet=%s tz=%s",
              settings.schedule_cron_scout, settings.schedule_cron_maturity,

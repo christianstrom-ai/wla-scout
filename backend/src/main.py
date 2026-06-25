@@ -288,6 +288,27 @@ def export_decisions(
     )
 
 
+@app.post("/admin/build-profile")
+def trigger_build_profile(user: str = Depends(require_auth)):
+    """Bygg vinnarprofilen från publika uploads i WLA-kanalen.
+    Utan profil får scout bara 18 base-queries."""
+    from .services.winner_profile import build_profile_from_public
+    from .db import SessionLocal
+    with SessionLocal() as db:
+        try:
+            profile = build_profile_from_public(db)
+            if profile is None:
+                return {"ok": False, "reason": "build_returned_none"}
+            return {
+                "ok": True,
+                "profile_id": profile.id,
+                "keyword_count": len(profile.keywords or []),
+                "top_keywords": [k["ngram"] for k in (profile.keywords or [])[:20]],
+            }
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, str(exc))
+
+
 @app.post("/admin/trigger-scout")
 def trigger_scout(force: bool = False, user: str = Depends(require_auth)):
     """Manuell scouting-körning. force=true raderar dagens delivery först
