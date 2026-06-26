@@ -125,14 +125,51 @@ const REJECT_CATEGORIES = [
   'Redan publicerat',
 ];
 
+const APPROVE_CATEGORIES = [
+  'Stark vinkel',
+  'Bra timing',
+  'Originalkälla',
+  'Visuellt starkt',
+  'Återkommande kreatör',
+  'Kontakt enkel',
+];
+
+// Färgschema per verdict-formulär — så ja-formuläret blir grönt, nej-rött.
+const FORM_THEME = {
+  yes: {
+    wrap: 'bg-emerald-50/70 border-emerald-200',
+    label: 'text-emerald-900',
+    chip:        'bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-100',
+    chipActive:  'bg-emerald-600 text-white border-emerald-600',
+    textarea:    'border-emerald-200 focus:border-emerald-400',
+    btn:         'bg-emerald-600 hover:bg-emerald-700',
+    title: 'Vad gör detta klippet rätt för WLA?',
+    save: 'Spara ja',
+  },
+  no: {
+    wrap: 'bg-red-50/70 border-red-200',
+    label: 'text-red-900',
+    chip:        'bg-white text-red-700 border-red-300 hover:bg-red-100',
+    chipActive:  'bg-red-600 text-white border-red-600',
+    textarea:    'border-red-200 focus:border-red-400',
+    btn:         'bg-red-600 hover:bg-red-700',
+    title: 'Varför valde du bort detta klipp?',
+    save: 'Spara nej',
+  },
+};
+
 function Expanded({ c, onDecided }) {
-  const [noteOpen, setNoteOpen] = useState(false);
+  // 'yes' | 'no' | null — vilket beslutsformulär som visas
+  const [pending, setPending] = useState(null);
   const [categories, setCategories] = useState([]);
   const [note, setNote] = useState('');
   function toggleCat(cat) {
     setCategories(categories.includes(cat)
       ? categories.filter(c => c !== cat)
       : [...categories, cat]);
+  }
+  function resetForm() {
+    setPending(null); setCategories([]); setNote('');
   }
   async function decide(verdict, payload = {}) {
     const noteText = [
@@ -143,7 +180,7 @@ function Expanded({ c, onDecided }) {
       method: 'POST',
       body: JSON.stringify({ verdict, note: noteText || null }),
     });
-    setNoteOpen(false); setCategories([]); setNote('');
+    resetForm();
     onDecided();
   }
   return (
@@ -187,44 +224,46 @@ function Expanded({ c, onDecided }) {
         <div className="flex gap-2">
           <button onClick={() => decide('snooze')}
             className="px-3 py-1.5 text-xs rounded-md border border-slate-300 hover:bg-slate-100">Snooze</button>
-          <button onClick={() => setNoteOpen(true)}
+          <button onClick={() => { resetForm(); setPending('no'); }}
             className="px-3 py-1.5 text-xs rounded-md bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">Nej</button>
-          <button onClick={() => decide('yes')}
+          <button onClick={() => { resetForm(); setPending('yes'); }}
             className="px-3 py-1.5 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Ja</button>
         </div>
       </div>
-      {noteOpen && (
-        <div className="bg-red-50/70 border border-red-200 rounded-lg p-3 space-y-3">
-          <div>
-            <div className="text-xs font-semibold text-red-900 mb-2">Varför valde du bort detta klipp?</div>
-            <div className="flex flex-wrap gap-1.5">
-              {REJECT_CATEGORIES.map(cat => (
-                <button key={cat} onClick={() => toggleCat(cat)}
-                  className={`px-2 py-1 text-[11px] rounded-md border transition-colors ${
-                    categories.includes(cat)
-                      ? 'bg-red-600 text-white border-red-600'
-                      : 'bg-white text-red-700 border-red-300 hover:bg-red-100'
-                  }`}>
-                  {cat}
-                </button>
-              ))}
+      {pending && (() => {
+        const t = FORM_THEME[pending];
+        const cats = pending === 'yes' ? APPROVE_CATEGORIES : REJECT_CATEGORIES;
+        return (
+          <div className={`border rounded-lg p-3 space-y-3 ${t.wrap}`}>
+            <div>
+              <div className={`text-xs font-semibold mb-2 ${t.label}`}>{t.title}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {cats.map(cat => (
+                  <button key={cat} onClick={() => toggleCat(cat)}
+                    className={`px-2 py-1 text-[11px] rounded-md border transition-colors ${
+                      categories.includes(cat) ? t.chipActive : t.chip
+                    }`}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="(valfritt fritext)"
+              className={`w-full text-xs px-2 py-1.5 border rounded-md resize-none focus:outline-none ${t.textarea}`}
+              rows={2}
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={resetForm}
+                className="px-3 py-1 text-xs rounded-md border border-slate-300 hover:bg-slate-100">Avbryt</button>
+              <button onClick={() => decide(pending, { categories, note })}
+                className={`px-3 py-1 text-xs rounded-md text-white ${t.btn}`}>{t.save}</button>
             </div>
           </div>
-          <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            placeholder="(valfritt fritext)"
-            className="w-full text-xs px-2 py-1.5 border border-red-200 rounded-md resize-none focus:outline-none focus:border-red-400"
-            rows={2}
-          />
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => { setNoteOpen(false); setCategories([]); setNote(''); }}
-              className="px-3 py-1 text-xs rounded-md border border-slate-300 hover:bg-slate-100">Avbryt</button>
-            <button onClick={() => decide('no', { categories, note })}
-              className="px-3 py-1 text-xs rounded-md bg-red-600 text-white hover:bg-red-700">Spara nej</button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
       {c.decision && (
         <div className="text-xs text-slate-500 italic">
           Beslut: {c.decision.verdict} · {new Date(c.decision.decided_at).toLocaleString('sv-SE')}
