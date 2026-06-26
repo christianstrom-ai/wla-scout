@@ -48,7 +48,12 @@ def _do_maturity(db: Session, run: RunLog) -> dict:
     to_poll = []
     now = datetime.now(timezone.utc)
     for c in candidates:
-        age_h = (now - c.published_at).total_seconds() / 3600
+        # SQLite returnerar DateTime(timezone=True) som naive — tvinga UTC så
+        # subtraktionen mot tz-aware `now` inte kastar TypeError.
+        pub = c.published_at
+        if pub.tzinfo is None:
+            pub = pub.replace(tzinfo=timezone.utc)
+        age_h = (now - pub).total_seconds() / 3600
         target = _pick_target(age_h, c.poll_history or [], hours)
         if target is not None:
             to_poll.append((c, target))
