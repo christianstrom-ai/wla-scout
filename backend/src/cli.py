@@ -10,6 +10,7 @@ from .services.sheet_sync import run_sheet_sync
 from .services.outcomes import run_outcomes
 from .services.google_oauth import interactive_login
 from .services.winner_profile import build_profile_from_analytics
+from .services.alerts import daily_status_to_slack
 
 
 def init_db():
@@ -63,6 +64,11 @@ def oauth_init():
     print(f"✓ Token sparad. Refresh token: {'finns' if creds.refresh_token else 'saknas'}")
 
 
+def daily_status():
+    ok = daily_status_to_slack()
+    print("✓ skickad till Slack" if ok else "⚠ kunde inte skicka (saknad webhook eller HTTP-fel)")
+
+
 COMMANDS = {
     "init-db": init_db,
     "scout": scout,
@@ -72,6 +78,7 @@ COMMANDS = {
     "winner-profile": winner_profile,
     "dry-run": dry_run,
     "oauth-init": oauth_init,
+    "daily-status": daily_status,
 }
 
 

@@ -37,3 +37,5 @@ services:
         sync: false
       - key: DASHBOARD_AUTH_SECRET
         generateValue: true
+      - key: ALERT_WEBHOOK
+        sync: false

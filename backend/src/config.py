@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     schedule_cron_scout: str = "0 6 * * *"
     schedule_cron_maturity: str = "0 */6 * * *"
     schedule_cron_sheet_sync: str = "0 2 * * *"
+    schedule_cron_daily_status: str = "30 6 * * *"  # 06:30 — efter scout-jobbet 06:00
 
     # Auth
     dashboard_auth_password: str = ""

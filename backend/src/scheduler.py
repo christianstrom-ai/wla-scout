@@ -12,7 +12,7 @@ from .services.scout import run_scout
 from .services.maturity import run_maturity
 from .services.sheet_sync import run_sheet_sync
 from .services.winner_profile import build_profile_from_public, get_active_profile
-from .services.alerts import alert
+from .services.alerts import alert, daily_status_to_slack
 
 log = logging.getLogger("scheduler")
 
@@ -62,6 +62,16 @@ def _sheet_job():
             alert(f"Sheet-sync failed: {exc}", "error")
 
 
+def _daily_status_job():
+    """Skickar dagsstatus till Slack — pool size + antal kandidater + senaste scout-info."""
+    try:
+        ok = daily_status_to_slack()
+        if not ok:
+            log.warning("daily-status: kunde inte skicka (saknad webhook eller HTTP-fel)")
+    except Exception as exc:  # noqa: BLE001
+        log.exception("daily-status failed: %s", exc)
+
+
 def _check_low_yield(db):
     """Larma om < 5 kandidater levererats N dagar i rad."""
     from datetime import date
@@ -86,8 +96,10 @@ def setup_scheduler() -> BackgroundScheduler:
     sched.add_job(_sheet_job, CronTrigger.from_crontab(settings.schedule_cron_sheet_sync, timezone=settings.tz), id="sheet_sync", replace_existing=True)
     # Vinnarprofil rebuild varje söndag kl 03:00
     sched.add_job(_profile_job, CronTrigger.from_crontab("0 3 * * 0", timezone=settings.tz), id="profile", replace_existing=True)
+    # Dagsstatus till Slack kl 06:30 — efter scout-jobbet 06:00 hunnit klart
+    sched.add_job(_daily_status_job, CronTrigger.from_crontab(settings.schedule_cron_daily_status, timezone=settings.tz), id="daily_status", replace_existing=True)
     sched.start()
-    log.info("Scheduler aktiv: scout=%s maturity=%s sheet=%s tz=%s",
+    log.info("Scheduler aktiv: scout=%s maturity=%s sheet=%s daily_status=%s tz=%s",
              settings.schedule_cron_scout, settings.schedule_cron_maturity,
-             settings.schedule_cron_sheet_sync, settings.tz)
+             settings.schedule_cron_sheet_sync, settings.schedule_cron_daily_status, settings.tz)
     return sched
