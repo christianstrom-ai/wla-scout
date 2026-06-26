@@ -327,6 +327,91 @@ def trigger_scout(force: bool = False, user: str = Depends(require_auth)):
             raise HTTPException(500, str(exc))
 
 
+@app.post("/admin/import-delivery")
+def import_delivery(payload: dict, user: str = Depends(require_auth)):
+    """En-gångs-import av en lokalt körd batch till prod. Skapar Candidates
+    som saknas (dedup på video_id) och lägger till en DailyDelivery för datumet
+    om den inte redan finns. För dagar när scoutkvoten är slut i prod men
+    lokalt fick igenom en batch.
+
+    Body:
+      { "date": "YYYY-MM-DD", "quality_floor": float,
+        "candidates": [ {<Candidate-fält som JSON>}... ],
+        "candidate_ids_order": [str, ...] }
+    """
+    from .db import SessionLocal
+
+    date = payload.get("date")
+    quality_floor = float(payload.get("quality_floor", 55.0))
+    candidates = payload.get("candidates", [])
+    order = payload.get("candidate_ids_order", [])
+    if not (date and candidates and order):
+        raise HTTPException(400, "date, candidates och candidate_ids_order krävs")
+
+    DT_FIELDS = {"published_at", "first_seen_at", "last_polled_at"}
+    inserted_new = 0
+    reused_existing = 0
+    final_ids: list[str] = []
+
+    with SessionLocal() as db:
+        for src in candidates:
+            video_id = src.get("video_id")
+            if not video_id:
+                continue
+            existing = db.query(models.Candidate).filter_by(video_id=video_id).first()
+            if existing:
+                reused_existing += 1
+                final_ids.append(existing.id)
+                continue
+            # Bygg ny Candidate. Parsa ISO-datetimes där det behövs.
+            data = {k: v for k, v in src.items() if hasattr(models.Candidate, k)}
+            for f in DT_FIELDS:
+                if data.get(f):
+                    try:
+                        data[f] = datetime.fromisoformat(data[f])
+                    except Exception:  # noqa: BLE001
+                        data.pop(f, None)
+            c = models.Candidate(**data)
+            db.add(c)
+            db.flush()
+            inserted_new += 1
+            final_ids.append(c.id)
+
+        # Behåll ordningen från payload där det går
+        id_set = set(final_ids)
+        ordered_existing_ids = [
+            (next((i for i in final_ids if i), None) if False else None) for _ in order
+        ]
+        # Enklare: ta candidates-listans ordning som final ordning
+        delivery = db.query(models.DailyDelivery).filter_by(date=date).first()
+        if delivery:
+            # Uppdatera om dagens leverans var tom
+            if not delivery.candidate_ids:
+                delivery.candidate_ids = final_ids
+                delivery.candidate_count = len(final_ids)
+                delivery.quality_floor = quality_floor
+                action = "updated_empty"
+            else:
+                action = "kept_existing"
+        else:
+            delivery = models.DailyDelivery(
+                date=date, candidate_ids=final_ids,
+                candidate_count=len(final_ids), quality_floor=quality_floor,
+            )
+            db.add(delivery)
+            action = "created"
+
+        db.commit()
+        return {
+            "ok": True,
+            "date": date,
+            "inserted_candidates": inserted_new,
+            "reused_existing_candidates": reused_existing,
+            "delivery_ids_count": len(final_ids),
+            "delivery_action": action,
+        }
+
+
 @app.get("/status")
 def status_panel(user: str = Depends(require_auth), db: Session = Depends(get_db)):
     runs = db.execute(
