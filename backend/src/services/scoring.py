@@ -11,6 +11,10 @@ from ..config import settings
 
 
 def hours_since(when: datetime) -> float:
+    # SQLite återlämnar DateTime(timezone=True)-kolumner utan tzinfo —
+    # tvinga UTC på naive värden så subtraktionen aldrig kastar.
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
     return max(0.5, (datetime.now(timezone.utc) - when).total_seconds() / 3600)
 
 
