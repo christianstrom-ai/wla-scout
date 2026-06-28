@@ -327,6 +327,22 @@ def trigger_scout(force: bool = False, user: str = Depends(require_auth)):
             raise HTTPException(500, str(exc))
 
 
+@app.post("/admin/send-daily-status")
+def admin_send_daily_status(user: str = Depends(require_auth)):
+    """Triggar Slack daily-status-notisen manuellt + rapporterar om webhook
+    är konfigurerad. Användbart för att verifiera setup på prod."""
+    from .services.alerts import daily_status_to_slack
+    from .config import settings as cfg
+    webhook_set = bool(cfg.alert_webhook)
+    ok = daily_status_to_slack() if webhook_set else False
+    return {
+        "webhook_configured": webhook_set,
+        "send_ok": ok,
+        "hint": (None if webhook_set else
+                 "Sätt ALERT_WEBHOOK i Render Environment-fliken så fyrar 06:30-jobbet."),
+    }
+
+
 @app.post("/admin/import-delivery")
 def import_delivery(payload: dict, user: str = Depends(require_auth)):
     """En-gångs-import av en lokalt körd batch till prod. Skapar Candidates
