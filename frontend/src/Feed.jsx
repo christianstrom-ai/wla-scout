@@ -25,7 +25,10 @@ export default function Feed() {
         </h1>
         <div className="text-xs text-slate-500 flex items-center gap-3">
           <Link to="/history" className="text-blue-600 hover:underline">← Historik (30d)</Link>
-          <span>{data.candidates.length} kandidater · golv {data.quality_floor}</span>
+          <span>
+            {data.candidates.length} kandidater · golv {data.quality_floor}
+            {typeof data.pool_size === 'number' && <> · pool {data.pool_size.toLocaleString('sv-SE')}</>}
+          </span>
         </div>
       </div>
       {data.candidates.length === 0 && <Empty />}

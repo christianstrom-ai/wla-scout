@@ -140,11 +140,15 @@ def _latest_decision(c: models.Candidate) -> dict | None:
 
 
 def _delivery_payload(date: str, delivery: models.DailyDelivery | None, db: Session) -> dict:
+    # Aktiv pool = kandidater som inte filtrerats bort, oavsett datum.
+    pool_size = db.query(models.Candidate).filter(models.Candidate.filtered_out.is_(False)).count()
     if not delivery or not delivery.candidate_ids:
-        return {"date": date, "candidates": [], "quality_floor": settings.quality_floor}
+        return {"date": date, "candidates": [], "quality_floor": settings.quality_floor,
+                "pool_size": pool_size}
     cands = db.query(models.Candidate).filter(models.Candidate.id.in_(delivery.candidate_ids)).all()
     ordered = sorted(cands, key=lambda c: delivery.candidate_ids.index(c.id))
     return {"date": date, "delivery_id": delivery.id, "quality_floor": delivery.quality_floor,
+            "pool_size": pool_size,
             "candidates": [_candidate_dto(c) for c in ordered]}
 
 
