@@ -186,8 +186,24 @@ function Expanded({ c, onDecided }) {
     resetForm();
     onDecided();
   }
+  // Embed YouTube-spelare direkt så redaktören kan bedöma utan tab-switch.
+  // Shorts (9:16) får smal centrerad player, vanliga klipp får 16:9 fullbredd.
+  // youtube-nocookie för minst tracking.
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${c.video_id}?rel=0&modestbranding=1`;
+  const isShort = c.is_short;
   return (
     <div className="border-t border-slate-200 p-4 bg-slate-50/50 space-y-4">
+      <div className={isShort ? "mx-auto" : "w-full"}
+           style={isShort ? { aspectRatio: '9/16', maxHeight: 420, maxWidth: 236 } : { aspectRatio: '16/9' }}>
+        <iframe
+          src={embedUrl}
+          title={c.title}
+          loading="lazy"
+          allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          className="w-full h-full rounded-lg bg-black border border-slate-200"
+        />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {Object.entries(SCORE_LABELS).map(([key, label]) => {
           const s = c.scores?.[key];
