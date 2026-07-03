@@ -60,13 +60,19 @@ def health(db: Session = Depends(get_db)):
     last_scout = db.execute(
         select(models.RunLog).where(models.RunLog.kind == "scout").order_by(models.RunLog.started_at.desc()).limit(1)
     ).scalar_one_or_none()
+    from sqlalchemy import func as sa_func
+    active_pool_size = db.scalar(
+        select(sa_func.count(models.Candidate.id)).where(models.Candidate.filtered_out.is_(False))
+    ) or 0
     return {
         "status": "ok",
         "now": datetime.now(timezone.utc).isoformat(),
         "last_scout": {
             "started_at": last_scout.started_at.isoformat() if last_scout else None,
             "status": last_scout.status if last_scout else None,
+            "stats": last_scout.stats if last_scout else None,
         } if last_scout else None,
+        "active_pool_size": int(active_pool_size),
         "config": {
             "tz": settings.tz,
             "max_subscribers": settings.max_subscribers,

@@ -280,9 +280,17 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
     )
     db.add(delivery); db.commit()
 
+    # Aktiv pool efter run:en = alla ackumulerade kandidater som inte
+    # filtrerats bort. Detta är samma siffra Slack-notisen visar under
+    # "Pool (aktiv)" och det som spelar roll för urvalsbredd över tid.
+    active_pool_size = db.scalar(
+        select(func.count(Candidate.id)).where(Candidate.filtered_out.is_(False))
+    )
+
     return {
         "queries": len(queries),
-        "pool": len(pool),
+        "pool": len(pool),                      # rå sökpool DENNA run
+        "active_pool_size": int(active_pool_size or 0),  # aktiv pool efter run
         "built": candidates_built,
         "filtered_out": filtered_out_count,
         "topn_llm": len(topn),
