@@ -80,7 +80,10 @@ def _do_scout(db: Session, run: RunLog, today: str) -> dict:
     queries = _build_queries(profile)
 
     pool: dict[str, dict] = {}                # video_id → stub
-    published_after = datetime.now(timezone.utc) - timedelta(days=7)
+    # Bredare fönster (14d) för att hitta videos vi inte fångade första
+    # veckan — 7d gav ~98% dedup mot befintlig pool. Ger fler byggda per
+    # run utan att slösa quota på queries.
+    published_after = datetime.now(timezone.utc) - timedelta(days=14)
     # Spend upp till 9000 enheter på search (90 sökningar × 100). Resterande
     # 1000 går till metadata/kanal-batches. Håller oss inom 10k-takdaylig kvot.
     quota_target = 9000
