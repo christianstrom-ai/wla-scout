@@ -3,6 +3,8 @@
 Datarepots layout (skrivs av morgonkörningen, läses här):
   feed/YYYY-MM-DD.json   {"date", "run": {...}, "items": [ {...}, ... ]}
   thumbs/<item_id>.jpg   bildruta ur klippet (valfri, pekas ut av item["thumb"])
+  (ett item kan ha initial_status/initial_reasons/initial_note som startläge
+   för nya rader, t.ex. vid flytt av beslut från en annan sida)
 
 Skrivs av appen (läses av morgonkörningen):
   decisions.json         {"exported_at", "items": {<id>: {status, reasons, ...}}}
@@ -173,6 +175,16 @@ def import_feed(db: Session, src=None) -> dict:
             is_new = row is None
             if is_new:
                 row = ScoutItem(id=item_id, status="ny")
+                # Valfritt startläge, t.ex. när beslut flyttas över från en
+                # annan sida. Gäller bara nya rader: beslut som redan fattats
+                # i appen skrivs aldrig över av en import.
+                init = it.get("initial_status")
+                if init in STATUSES:
+                    row.status = init
+                    row.reasons = [x for x in (it.get("initial_reasons") or []) if isinstance(x, str)][:10] or None
+                    row.decision_note = it.get("initial_note") or None
+                    if init != "ny":
+                        row.decided_at = datetime.now(timezone.utc)
                 db.add(row)
             for field in CONTENT_FIELDS:
                 if field in it:
