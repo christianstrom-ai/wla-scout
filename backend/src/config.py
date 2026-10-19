@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     # Alerts
     alert_webhook: str = ""
 
+    # Claude-scouten (Storys-fliken). Morgonkörningen lägger feed-filer och
+    # bilder i ett datarepo på GitHub; appen hämtar dem och skriver tillbaka
+    # redaktionens beslut dit. Utan repo/token är synken avstängd.
+    scout_data_repo: str = ""          # "ägare/repo", t.ex. "tomlannge/wla-scout-data"
+    scout_data_branch: str = "main"
+    scout_github_token: str = ""       # fine-grained token: Contents read/write på datarepot
+    scout_data_dir: str = ""           # alternativ för lokal utveckling: läs/skriv en mapp i stället
+    schedule_cron_scout_sync: str = "*/15 * * * *"
+
     # DB
     database_url: str = "sqlite:///./wla.db"
 

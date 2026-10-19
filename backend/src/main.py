@@ -18,6 +18,7 @@ from .config import settings
 from .db import get_db, engine, Base
 from . import models  # noqa: F401 — registrera tabeller
 from .scheduler import setup_scheduler
+from .scout_api import router as scout_router
 
 # Kill-switch i minne: när False → scout-jobbet skippar LLM-anrop.
 KILL_SWITCH = {"llm_enabled": True, "scheduler_enabled": True}
@@ -456,6 +457,10 @@ def status_panel(user: str = Depends(require_auth), db: Session = Depends(get_db
             for r in runs
         ],
     }
+
+
+# ---- Storys (Claude-scouten) ----
+app.include_router(scout_router)
 
 
 # ---- Frontend static (SPA) ----

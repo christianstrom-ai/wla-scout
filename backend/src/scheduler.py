@@ -72,6 +72,20 @@ def _daily_status_job():
         log.exception("daily-status failed: %s", exc)
 
 
+def _scout_sync_job():
+    """Hämta nya storys från Claude-scoutens datarepo och skriv tillbaka beslut."""
+    from .services.scout_sync import run_sync, is_configured
+    if not is_configured():
+        return
+    with SessionLocal() as db:
+        try:
+            res = run_sync(db)
+            if res.get("items_new") or res.get("decisions_exported"):
+                log.info("scout-sync: %s", res)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("scout-sync failed: %s", exc)
+
+
 def _check_low_yield(db):
     """Larma om < 5 kandidater levererats N dagar i rad."""
     from datetime import date
@@ -98,6 +112,8 @@ def setup_scheduler() -> BackgroundScheduler:
     sched.add_job(_profile_job, CronTrigger.from_crontab("0 3 * * 0", timezone=settings.tz), id="profile", replace_existing=True)
     # Dagsstatus till Slack kl 06:30 — efter scout-jobbet 06:00 hunnit klart
     sched.add_job(_daily_status_job, CronTrigger.from_crontab(settings.schedule_cron_daily_status, timezone=settings.tz), id="daily_status", replace_existing=True)
+    # Claude-scoutens Storys: synka var 15:e minut (avstängt om inget datarepo är konfigurerat)
+    sched.add_job(_scout_sync_job, CronTrigger.from_crontab(settings.schedule_cron_scout_sync, timezone=settings.tz), id="scout_sync", replace_existing=True)
     sched.start()
     log.info("Scheduler aktiv: scout=%s maturity=%s sheet=%s daily_status=%s tz=%s",
              settings.schedule_cron_scout, settings.schedule_cron_maturity,

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     String, Integer, Float, Boolean, DateTime, Text, ForeignKey, JSON,
-    UniqueConstraint, Index
+    UniqueConstraint, Index, LargeBinary
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
@@ -176,6 +176,65 @@ class SheetSync(Base):
     rows_read: Mapped[int] = mapped_column(Integer)
     rows_matched: Mapped[int] = mapped_column(Integer)
     rows_needs_manual: Mapped[int] = mapped_column(Integer)
+
+
+class ScoutItem(Base):
+    """En story från Claude-scouten (TikTok/Instagram/YouTube/Facebook).
+
+    Egen tabell, helt fristående från YouTube-pipelinens Candidate, så att
+    befintlig data och befintliga flöden inte påverkas. Importeras från
+    datarepot (feed/YYYY-MM-DD.json) av services/scout_sync.py. Redaktionens
+    beslut lagras här och exporteras tillbaka till datarepot så att nästa
+    morgonkörning lär sig av dem."""
+    __tablename__ = "scout_items"
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # t.ex. "tt-7695906262310997278"
+    feed_date: Mapped[str] = mapped_column(String(10), index=True)
+    platform: Mapped[str] = mapped_column(String(16))  # tiktok | instagram | youtube | facebook
+    url: Mapped[str] = mapped_column(Text)
+    creator: Mapped[str | None] = mapped_column(Text)
+    creator_url: Mapped[str | None] = mapped_column(Text)
+    creator_name: Mapped[str | None] = mapped_column(Text)
+    followers: Mapped[int | None] = mapped_column(Integer)
+    views: Mapped[int | None] = mapped_column(Integer)
+    outlier: Mapped[float | None] = mapped_column(Float)
+    duration_sec: Mapped[int | None] = mapped_column(Integer)
+    headline: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    why: Mapped[str | None] = mapped_column(Text)
+    angle: Mapped[str | None] = mapped_column(Text)
+    contact: Mapped[str | None] = mapped_column(Text)
+    checks: Mapped[dict | None] = mapped_column(JSON)
+    priority: Mapped[str | None] = mapped_column(String(16))  # kontakta | bevaka
+    score: Mapped[float | None] = mapped_column(Float)
+    request_subject: Mapped[str | None] = mapped_column(Text)
+    request_hook: Mapped[str | None] = mapped_column(Text)
+    request_topic: Mapped[str | None] = mapped_column(Text)
+    has_thumb: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Redaktionens beslut: ny | yes | no | snooze | contacted
+    status: Mapped[str] = mapped_column(String(16), default="ny", index=True)
+    reasons: Mapped[list | None] = mapped_column(JSON)
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    team_note: Mapped[str | None] = mapped_column(Text)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ScoutThumb(Base):
+    """Förhandsbild (bildruta ur klippet) för en ScoutItem."""
+    __tablename__ = "scout_thumbs"
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("scout_items.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(64), default="image/jpeg")
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class ScoutRun(Base):
+    """Sammanfattning av en morgonkörning (från feed-filen)."""
+    __tablename__ = "scout_runs"
+    feed_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    run: Mapped[dict | None] = mapped_column(JSON)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class WinnerProfile(Base):

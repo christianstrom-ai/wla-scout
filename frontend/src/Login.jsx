@@ -11,7 +11,7 @@ export default function Login() {
     setErr('');
     try {
       await api('/login', { method: 'POST', body: JSON.stringify({ password: pw }) });
-      nav('/feed');
+      nav('/storys');
     } catch (e) {
       setErr('Fel lösenord');
     }

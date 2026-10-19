@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './index.css';
 import Login from './Login.jsx';
 import Feed from './Feed.jsx';
+import Storys from './Storys.jsx';
 import History from './History.jsx';
 import Status from './Status.jsx';
 import Learning from './Learning.jsx';
@@ -16,7 +17,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
-          <Route path="/" element={<Navigate to="/feed" replace />} />
+          <Route path="/" element={<Navigate to="/storys" replace />} />
+          <Route path="/storys" element={<Storys />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/feed/:date" element={<Feed />} />
           <Route path="/clip/:id" element={<Feed />} />

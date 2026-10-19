@@ -39,3 +39,9 @@ services:
         generateValue: true
       - key: ALERT_WEBHOOK
         sync: false
+      # Storys (Claude-scouten): datarepot med feed-filer + token med
+      # Contents read/write på just det repot
+      - key: SCOUT_DATA_REPO
+        sync: false
+      - key: SCOUT_GITHUB_TOKEN
+        sync: false
