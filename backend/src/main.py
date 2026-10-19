@@ -475,5 +475,8 @@ if _FRONTEND_DIR.exists():
         # API-rutter har redan matchat; allt annat → index.html (React Router tar över)
         index = _FRONTEND_DIR / "index.html"
         if index.exists():
-            return FileResponse(index)
+            # no-cache: webbläsaren frågar alltid servern om sidan är ny, så
+            # alla får den senaste versionen direkt efter en deploy. Filerna
+            # under /assets har versionsnummer i namnet och cachas som vanligt.
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
         raise HTTPException(404, "Frontend not built")
