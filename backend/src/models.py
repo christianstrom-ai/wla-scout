@@ -188,6 +188,7 @@ class ScoutItem(Base):
     morgonkörning lär sig av dem."""
     __tablename__ = "scout_items"
     id: Mapped[str] = mapped_column(String, primary_key=True)  # t.ex. "tt-7695906262310997278"
+    feed: Mapped[str] = mapped_column(String(16), default="animals", index=True)  # animals | human
     feed_date: Mapped[str] = mapped_column(String(10), index=True)
     platform: Mapped[str] = mapped_column(String(16))  # tiktok | instagram | youtube | facebook
     url: Mapped[str] = mapped_column(Text)
@@ -230,9 +231,10 @@ class ScoutThumb(Base):
 
 
 class ScoutRun(Base):
-    """Sammanfattning av en morgonkörning (från feed-filen)."""
+    """Sammanfattning av en morgonkörning (från feed-filen).
+    Nyckel: "YYYY-MM-DD" för djurflödet, "human:YYYY-MM-DD" för human interest."""
     __tablename__ = "scout_runs"
-    feed_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    feed_date: Mapped[str] = mapped_column(String(32), primary_key=True)
     run: Mapped[dict | None] = mapped_column(JSON)
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

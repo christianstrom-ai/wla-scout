@@ -8,10 +8,11 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-6">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="font-bold text-base">WLA Scout</div>
-          <nav className="flex gap-1">
+          <nav className="flex flex-wrap gap-1">
             <NavLink to="/storys" className={link}>Storys</NavLink>
+            <NavLink to="/human" className={link}>Human interest</NavLink>
             <NavLink to="/feed" end className={link}>YouTube-feed</NavLink>
             <NavLink to="/history" className={link}>Historik</NavLink>
             <NavLink to="/status" className={link}>Status</NavLink>

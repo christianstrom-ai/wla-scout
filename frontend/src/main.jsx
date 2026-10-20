@@ -18,7 +18,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/login" element={<Login />} />
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
           <Route path="/" element={<Navigate to="/storys" replace />} />
-          <Route path="/storys" element={<Storys />} />
+          <Route path="/storys" element={<Storys feed="animals" key="animals" />} />
+          <Route path="/human" element={<Storys feed="human" key="human" />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/feed/:date" element={<Feed />} />
           <Route path="/clip/:id" element={<Feed />} />
