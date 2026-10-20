@@ -52,6 +52,8 @@ def _ensure_tables():
     # SQLite quick-start. Prod kör Alembic-migrationer.
     if settings.database_url.startswith("sqlite"):
         Base.metadata.create_all(engine)
+    from .services.scout_sync import ensure_schema
+    ensure_schema(engine)
     if KILL_SWITCH["scheduler_enabled"]:
         setup_scheduler()
 

@@ -1,7 +1,8 @@
 """Synk mellan appen och datarepot som Claude-scouten skriver till.
 
 Datarepots layout (skrivs av morgonkörningen, läses här):
-  feed/YYYY-MM-DD.json   {"date", "run": {...}, "items": [ {...}, ... ]}
+  feed/YYYY-MM-DD.json   djurflödet (Storys): {"date", "run": {...}, "items": [...]}
+  human/YYYY-MM-DD.json  human interest-flödet, samma format
   thumbs/<item_id>.jpg   bildruta ur klippet (valfri, pekas ut av item["thumb"])
   (ett item kan ha initial_status/initial_reasons/initial_note som startläge
    för nya rader, t.ex. vid flytt av beslut från en annan sida)
@@ -40,6 +41,12 @@ INT_FIELDS = {"followers", "views", "duration_sec"}
 FLOAT_FIELDS = {"outlier", "score"}
 STATUSES = {"ny", "yes", "no", "snooze", "contacted"}
 MAX_FEED_FILES = 30  # importera bara de senaste N dagarnas filer
+# mapp i datarepot -> flöde
+FEEDS = {"feed": "animals", "human": "human"}
+
+
+def run_key(feed: str, date: str) -> str:
+    return date if feed == "animals" else f"{feed}:{date}"
 
 
 def is_configured() -> bool:
@@ -148,12 +155,19 @@ def _coerce(field: str, value):
 
 def import_feed(db: Session, src=None) -> dict:
     src = src or _source()
-    files = [f for f in src.list_dir("feed") if f["name"].endswith(".json")]
-    files = sorted(files, key=lambda f: f["name"])[-MAX_FEED_FILES:]
     stats = {"files_read": 0, "items_new": 0, "items_updated": 0, "thumbs": 0, "errors": 0}
+    for folder, feed in FEEDS.items():
+        _import_folder(db, src, folder, feed, stats)
+    return stats
+
+
+def _import_folder(db: Session, src, folder: str, feed: str, stats: dict) -> None:
+    files = [f for f in src.list_dir(folder) if f["name"].endswith(".json")]
+    files = sorted(files, key=lambda f: f["name"])[-MAX_FEED_FILES:]
     for f in files:
         date = f["name"][:-5]
-        run_row = db.get(ScoutRun, date)
+        key = run_key(feed, date)
+        run_row = db.get(ScoutRun, key)
         if run_row and (run_row.run or {}).get("_sha") == f["sha"]:
             continue  # oförändrad fil
         raw = src.read(f["path"])
@@ -189,6 +203,7 @@ def import_feed(db: Session, src=None) -> dict:
             for field in CONTENT_FIELDS:
                 if field in it:
                     setattr(row, field, _coerce(field, it[field]))
+            row.feed = feed  # mappen bestämmer flödet
             if not row.feed_date:
                 row.feed_date = date
             if not row.platform:
@@ -213,9 +228,8 @@ def import_feed(db: Session, src=None) -> dict:
             run_row.run = run
             run_row.imported_at = datetime.now(timezone.utc)
         else:
-            db.add(ScoutRun(feed_date=date, run=run))
+            db.add(ScoutRun(feed_date=key, run=run))
         db.commit()
-    return stats
 
 
 # ---------- Export av beslut ----------
@@ -227,6 +241,7 @@ def decisions_payload(db: Session) -> bytes:
     items = {}
     for r in rows:
         items[r.id] = {
+            "feed": r.feed or "animals",
             "status": r.status,
             "reasons": r.reasons or [],
             "decision_note": r.decision_note,
@@ -247,6 +262,21 @@ def export_decisions(db: Session, src=None) -> bool:
     src = src or _source()
     return src.write_if_changed("decisions.json", decisions_payload(db),
                                 "WLA Scout: uppdatera redaktionens beslut")
+
+
+def ensure_schema(engine) -> None:
+    """Lägg till kolumner som tillkommit efter första versionen av tabellerna.
+    create_all() skapar bara nya tabeller, inte nya kolumner i befintliga."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "scout_items" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("scout_items")}
+    if "feed" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE scout_items ADD COLUMN feed VARCHAR(16) DEFAULT 'animals'"))
+            conn.execute(text("UPDATE scout_items SET feed = 'animals' WHERE feed IS NULL"))
+        log.info("scout_items.feed tillagd")
 
 
 def run_sync(db: Session) -> dict:

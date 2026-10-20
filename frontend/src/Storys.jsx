@@ -54,23 +54,26 @@ function embedFor(item) {
   return null;
 }
 
-export default function Storys() {
+const FEED_TITLES = { animals: 'Storys', human: 'Human interest' };
+
+export default function Storys({ feed = 'animals' }) {
+  const tabKey = feed === 'animals' ? 'wla-storys-tab' : `wla-storys-tab-${feed}`;
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState(() => {
-    try { return localStorage.getItem('wla-storys-tab') || 'ny'; } catch { return 'ny'; }
+    try { return localStorage.getItem(tabKey) || 'ny'; } catch { return 'ny'; }
   });
   const [openId, setOpenId] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
   async function refresh() {
     try {
-      setData(await api('/scout/items'));
+      setData(await api(`/scout/items?feed=${feed}`));
       setError('');
     } catch (e) { setError('Kunde inte hämta storys. Ladda om sidan.'); }
   }
-  useEffect(() => { refresh(); }, []);
-  useEffect(() => { try { localStorage.setItem('wla-storys-tab', tab); } catch { /* ignoreras */ } }, [tab]);
+  useEffect(() => { setData(null); setOpenId(null); refresh(); }, [feed]);
+  useEffect(() => { try { localStorage.setItem(tabKey, tab); } catch { /* ignoreras */ } }, [tab, tabKey]);
 
   function replaceItem(updated) {
     setData(d => ({ ...d, items: d.items.map(i => (i.id === updated.id ? updated : i)) }));
@@ -103,7 +106,7 @@ export default function Storys() {
   return (
     <div>
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-        <h1 className="text-xl font-bold">Storys</h1>
+        <h1 className="text-xl font-bold">{FEED_TITLES[feed] || 'Storys'}</h1>
         <div className="text-xs text-slate-500 flex flex-wrap items-center gap-3">
           {run ? (
             <span>

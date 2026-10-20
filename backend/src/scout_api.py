@@ -24,7 +24,7 @@ HISTORY_DAYS = 60
 
 def _dto(r: models.ScoutItem) -> dict:
     return {
-        "id": r.id, "feed_date": r.feed_date, "platform": r.platform, "url": r.url,
+        "id": r.id, "feed": r.feed or "animals", "feed_date": r.feed_date, "platform": r.platform, "url": r.url,
         "creator": r.creator, "creator_url": r.creator_url, "creator_name": r.creator_name,
         "followers": r.followers, "views": r.views, "outlier": r.outlier,
         "duration_sec": r.duration_sec, "headline": r.headline, "summary": r.summary,
@@ -40,18 +40,27 @@ def _dto(r: models.ScoutItem) -> dict:
 
 
 @router.get("/scout/items")
-def scout_items(user: str = Depends(require_auth), db: Session = Depends(get_db)):
+def scout_items(feed: str = "animals", user: str = Depends(require_auth), db: Session = Depends(get_db)):
+    if feed not in ("animals", "human"):
+        raise HTTPException(400, "feed must be animals/human")
     cutoff = (datetime.now(timezone.utc).date() - timedelta(days=HISTORY_DAYS)).isoformat()
+    feed_filter = (models.ScoutItem.feed == feed) if feed != "animals" else (
+        (models.ScoutItem.feed == "animals") | (models.ScoutItem.feed.is_(None)))
     rows = (db.query(models.ScoutItem)
+            .filter(feed_filter)
             .filter((models.ScoutItem.feed_date >= cutoff) | (models.ScoutItem.status.in_(["yes", "snooze"])))
             .order_by(models.ScoutItem.feed_date.desc(), models.ScoutItem.score.desc())
             .all())
-    last_run = db.query(models.ScoutRun).order_by(models.ScoutRun.feed_date.desc()).first()
+    runs = db.query(models.ScoutRun)
+    runs = (runs.filter(models.ScoutRun.feed_date.like(f"{feed}:%")) if feed != "animals"
+            else runs.filter(~models.ScoutRun.feed_date.like("%:%")))
+    last_run = runs.order_by(models.ScoutRun.feed_date.desc()).first()
     return {
+        "feed": feed,
         "items": [_dto(r) for r in rows],
         "reject_reasons": REJECT_REASONS,
         "approve_reasons": APPROVE_REASONS,
-        "last_run": ({"feed_date": last_run.feed_date,
+        "last_run": ({"feed_date": last_run.feed_date.split(":")[-1],
                       "imported_at": last_run.imported_at.isoformat() if last_run.imported_at else None,
                       **{k: v for k, v in (last_run.run or {}).items() if not k.startswith("_")}}
                      if last_run else None),
@@ -108,7 +117,7 @@ def scout_thumb(item_id: str, user: str = Depends(require_auth), db: Session = D
                     headers={"Cache-Control": "private, max-age=86400"})
 
 
-PROOF_SYSTEM = """You proofread outreach messages that a video editor at Newsner (a viral news network) sends to private people who filmed animal rescue videos, asking for an interview and permission to share the video.
+PROOF_SYSTEM = """You proofread outreach messages that a video editor at Newsner (a viral news network) sends to private people who filmed a video (an animal rescue or a human-interest moment), asking for an interview and permission to share the video.
 
 Correct spelling, grammar, punctuation and capitalisation, and smooth out awkward or unnatural phrasing so the message reads like fluent, warm, professional English from a native speaker. If any part is written in Swedish or another language, translate it into natural English.
 
